@@ -33,6 +33,14 @@ export function ExcelPreview({ result, onConfirm, onCancel }: ExcelPreviewProps)
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Header Row Info */}
+        {result.headerRowIndex && (
+          <div className="bg-primary/10 rounded-lg p-3 flex items-center gap-2 text-sm">
+            <CheckCircle2 className="h-4 w-4 text-primary" />
+            Header row detected at <strong>row {result.headerRowIndex}</strong>
+          </div>
+        )}
+
         {/* Detected Columns Info */}
         <div className="bg-muted/30 rounded-lg p-3 space-y-2">
           <p className="text-sm font-medium">Detected Columns:</p>

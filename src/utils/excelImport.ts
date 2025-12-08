@@ -20,6 +20,7 @@ export interface ExcelImportResult {
     serialNumber: boolean;
   };
   headers: string[];
+  headerRowIndex: number;
   detectedColumns: {
     serialNo: { index: number; header: string } | null;
     name: { index: number; header: string } | null;
@@ -30,97 +31,51 @@ export interface ExcelImportResult {
 
 /**
  * =============================================================
- * VI AWARD LIST EXCEL IMPORT
+ * ROBUST EXCEL IMPORT ENGINE
  * =============================================================
  * 
- * EXACT HEADER MATCHING:
- * - Reads the actual headers from row 1 of the uploaded Excel
- * - Matches headers EXACTLY (case-insensitive, trimmed)
- * - Only auto-generates values when cells are ACTUALLY EMPTY
- * - Never overwrites existing valid data
+ * Features:
+ * - Scans first 20 rows to find the header row
+ * - Handles messy files with title rows, blank rows, merged cells
+ * - Case-insensitive header matching
+ * - Auto-generates S.No if missing, but never auto-generates names/enrollment
  */
 
 /**
  * Normalize a header string for comparison
- * - Lowercase
- * - Trim whitespace
- * - Collapse multiple spaces to single space
  */
 function normalizeHeader(header: string): string {
-  return String(header || '').toLowerCase().trim().replace(/\s+/g, ' ');
-}
-
-/**
- * Check if a header matches any of the given patterns
- * Uses exact match first, then partial match
- */
-function headerMatches(header: string, patterns: string[]): boolean {
-  const normalized = normalizeHeader(header);
-  
-  // Exact match
-  for (const pattern of patterns) {
-    if (normalized === normalizeHeader(pattern)) {
-      return true;
-    }
-  }
-  
-  // Partial match (header contains pattern)
-  for (const pattern of patterns) {
-    const normalizedPattern = normalizeHeader(pattern);
-    if (normalized.includes(normalizedPattern) || normalizedPattern.includes(normalized)) {
-      return true;
-    }
-  }
-  
-  return false;
-}
-
-/**
- * Find column index by checking exact header matches
- * Returns the index and the original header name
- */
-function findColumnByPatterns(
-  rawHeaders: string[],
-  patterns: string[]
-): { index: number; header: string } | null {
-  for (let i = 0; i < rawHeaders.length; i++) {
-    if (headerMatches(rawHeaders[i], patterns)) {
-      return { index: i, header: rawHeaders[i] };
-    }
-  }
-  return null;
+  return String(header || '').toLowerCase().trim().replace(/\s+/g, ' ').replace(/[.\-_]/g, '');
 }
 
 // =============================================================
-// HEADER PATTERNS FOR VI AWARD LIST FORMAT
+// HEADER PATTERNS
 // =============================================================
 
-// Serial Number patterns - matches S.No, Sr No, Serial Number, etc.
 const SERIAL_PATTERNS = [
-  's.no', 's.no.', 'sno', 's no', 'sr no', 'sr. no', 'sr.no', 'sr.no.',
-  'serial', 'serial no', 'serial number', 'serial no.', 'sr', 'sl no',
-  'sl. no', 'slno', 's. no', 's. no.', 'srno'
+  's.no', 'sno', 's no', 'sr no', 'sr.no', 'srno', 'sr. no',
+  'serial', 'serial no', 'serial number', 'sl no', 'sl.no', 'slno',
+  's. no', 's.no.', 'sr.no.', 'sl. no', 'sr', 'sl'
 ];
 
-// Student Name patterns - matches Name, Student Name, etc.
 const NAME_PATTERNS = [
-  'name', 'student name', 'studentname', 'student_name', 'full name',
-  'student', "student's name", 'child name', 'learner name', 'pupil name',
-  'scholar name', 'candidate name', 'name of student', 'student (name)'
+  'student name', 'studentname', 'name', 'student', 'full name',
+  "student's name", 'child name', 'learner name', 'pupil name',
+  'scholar name', 'candidate name', 'name of student'
 ];
 
-// Enrollment Number patterns - matches Enrollment No, Admission No, ER No, etc.
 const ENROLLMENT_PATTERNS = [
-  'enrollment no', 'enrollment number', 'enrollment', 'enroll no', 'enroll',
-  'enrolment no', 'enrolment number', 'enrolment', 'er no', 'er. no', 'er.no',
-  'admission no', 'adm no', 'adm. no', 'admission number', 
+  'enrollment no', 'enrollment number', 'enrollment', 'enroll no',
+  'enrolment no', 'enrolment number', 'enrolment', 
+  'er no', 'er.no', 'er. no', 'erno',
+  'adm no', 'adm.no', 'adm. no', 'admission no', 'admission number', 'admission',
   'student id', 'id no', 'id number',
-  'reg no', 'registration no', 'registration number', 'uid', 'unique id',
-  'admission', 'en.no', 'en no', 'en.no.'
+  'reg no', 'registration no', 'registration number',
+  'uid', 'unique id', 'en.no', 'en no', 'enno'
 ];
 
 const ROLL_PATTERNS = [
-  'roll', 'roll no', 'roll number', 'rollno', 'roll no.', 'roll_no'
+  'roll', 'roll no', 'roll number', 'rollno', 'roll no.'
 ];
 
 const CLASS_PATTERNS = [
@@ -144,7 +99,6 @@ const BEHAVIOR_PATTERNS = [
   'comments', 'observation', 'observations'
 ];
 
-// Known subjects to detect as marks columns
 const KNOWN_SUBJECTS = [
   'english', 'hindi', 'mathematics', 'maths', 'math', 'science', 'social studies',
   'social science', 'sst', 'computer', 'computer science', 'cs', 'art', 'craft',
@@ -155,34 +109,137 @@ const KNOWN_SUBJECTS = [
 ];
 
 /**
- * Detect subject columns - any column that looks like a subject name
- * and contains numeric data
+ * Check if a normalized header matches any pattern
+ */
+function matchesPattern(normalizedHeader: string, patterns: string[]): boolean {
+  for (const pattern of patterns) {
+    const normalizedPattern = normalizeHeader(pattern);
+    // Exact match
+    if (normalizedHeader === normalizedPattern) return true;
+    // Contains match (header contains pattern or pattern contains header)
+    if (normalizedHeader.includes(normalizedPattern) || normalizedPattern.includes(normalizedHeader)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Find column by patterns in a row
+ */
+function findColumnByPatterns(
+  row: any[],
+  patterns: string[]
+): { index: number; header: string } | null {
+  for (let i = 0; i < row.length; i++) {
+    const cellValue = String(row[i] || '').trim();
+    if (!cellValue) continue;
+    
+    const normalized = normalizeHeader(cellValue);
+    if (matchesPattern(normalized, patterns)) {
+      return { index: i, header: cellValue };
+    }
+  }
+  return null;
+}
+
+/**
+ * Count how many key columns are found in a row
+ * Key columns: Name + Enrollment OR Name + S.No (at least 2 of 3)
+ */
+function countKeyColumns(row: any[]): {
+  count: number;
+  hasName: boolean;
+  hasEnrollment: boolean;
+  hasSerial: boolean;
+} {
+  const hasName = findColumnByPatterns(row, NAME_PATTERNS) !== null;
+  const hasEnrollment = findColumnByPatterns(row, ENROLLMENT_PATTERNS) !== null;
+  const hasSerial = findColumnByPatterns(row, SERIAL_PATTERNS) !== null;
+  
+  let count = 0;
+  if (hasName) count++;
+  if (hasEnrollment) count++;
+  if (hasSerial) count++;
+  
+  return { count, hasName, hasEnrollment, hasSerial };
+}
+
+/**
+ * Scan first N rows to find the header row
+ * Returns the row index (0-based) or -1 if not found
+ */
+function findHeaderRow(jsonData: any[][], maxRows: number = 20): number {
+  const rowsToScan = Math.min(jsonData.length, maxRows);
+  
+  let bestRowIndex = -1;
+  let bestScore = 0;
+  
+  for (let i = 0; i < rowsToScan; i++) {
+    const row = jsonData[i];
+    if (!row || row.length === 0) continue;
+    
+    // Skip rows that are completely empty or have only one cell (likely title)
+    const nonEmptyCells = row.filter((cell: any) => 
+      cell !== undefined && cell !== null && String(cell).trim() !== ''
+    );
+    if (nonEmptyCells.length < 2) continue;
+    
+    const { count, hasName, hasEnrollment } = countKeyColumns(row);
+    
+    // We need at least Name + one other (Enrollment or S.No)
+    if (count >= 2 && hasName) {
+      // Prefer rows with Name + Enrollment
+      const score = hasEnrollment ? count + 1 : count;
+      if (score > bestScore) {
+        bestScore = score;
+        bestRowIndex = i;
+      }
+    }
+  }
+  
+  return bestRowIndex;
+}
+
+/**
+ * Check if a cell value is empty
+ */
+function isEmptyCell(value: any): boolean {
+  if (value === undefined || value === null) return true;
+  const str = String(value).trim();
+  return str === '' || str === '-' || str === 'N/A' || str === 'NA' || str === '—';
+}
+
+/**
+ * Detect subject columns
  */
 function findSubjectColumns(
   rawHeaders: string[],
-  normalizedHeaders: string[],
   jsonData: any[][],
+  headerRowIndex: number,
   excludeIndices: Set<number>
 ): { index: number; name: string }[] {
   const subjects: { index: number; name: string }[] = [];
   
-  for (let i = 0; i < normalizedHeaders.length; i++) {
+  for (let i = 0; i < rawHeaders.length; i++) {
     if (excludeIndices.has(i)) continue;
     
-    const header = normalizedHeaders[i];
-    const rawHeader = rawHeaders[i];
+    const header = rawHeaders[i];
+    if (!header) continue;
+    
+    const normalized = normalizeHeader(header);
     
     // Check if it's a known subject
     let isSubject = KNOWN_SUBJECTS.some(subj => 
-      header.includes(subj) || subj.includes(header)
+      normalized.includes(normalizeHeader(subj)) || normalizeHeader(subj).includes(normalized)
     );
     
     // Also check if the column contains mostly numeric data (marks)
-    if (!isSubject && rawHeader) {
+    if (!isSubject) {
       let numericCount = 0;
       let totalCount = 0;
       
-      for (let row = 1; row < Math.min(jsonData.length, 10); row++) {
+      for (let row = headerRowIndex + 1; row < Math.min(jsonData.length, headerRowIndex + 10); row++) {
         const value = jsonData[row]?.[i];
         if (value !== undefined && value !== null && String(value).trim() !== '') {
           totalCount++;
@@ -193,14 +250,14 @@ function findSubjectColumns(
         }
       }
       
-      // If >70% of first 10 rows are numeric 0-100, likely a marks column
+      // If >70% of rows are numeric 0-100, likely a marks column
       if (totalCount > 0 && numericCount / totalCount >= 0.7) {
         isSubject = true;
       }
     }
     
-    if (isSubject && rawHeader) {
-      subjects.push({ index: i, name: rawHeader.trim() });
+    if (isSubject) {
+      subjects.push({ index: i, name: header.trim() });
     }
   }
   
@@ -208,22 +265,7 @@ function findSubjectColumns(
 }
 
 /**
- * Check if a cell value is empty
- */
-function isEmptyCell(value: any): boolean {
-  if (value === undefined || value === null) return true;
-  const str = String(value).trim();
-  return str === '' || str === '-' || str === 'N/A' || str === 'NA';
-}
-
-/**
  * Parse Excel file and extract student data
- * 
- * KEY BEHAVIORS:
- * 1. Detects columns by EXACT header matching (case-insensitive)
- * 2. Only auto-generates values when cells are ACTUALLY EMPTY
- * 3. Never overwrites existing valid data
- * 4. Returns detailed info about what was detected and auto-generated
  */
 export async function importStudentsFromExcel(file: File): Promise<ExcelImportResult> {
   return new Promise((resolve, reject) => {
@@ -236,85 +278,100 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
         
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' }) as any[][];
         
-        if (jsonData.length < 2) {
-          reject(new Error('Excel file must have at least a header row and one data row'));
+        if (jsonData.length < 1) {
+          reject(new Error('Excel file is empty'));
           return;
         }
         
-        // Get raw headers and normalized versions
-        const rawHeaders = jsonData[0].map((h: any) => String(h || '').trim());
-        const normalizedHeaders = rawHeaders.map(normalizeHeader);
+        console.log('📊 Scanning Excel for header row...');
+        console.log(`   Total rows in file: ${jsonData.length}`);
         
-        console.log('📊 Excel Headers Detected:', rawHeaders);
+        // =============================================================
+        // STEP 1: FIND HEADER ROW
+        // =============================================================
+        
+        const headerRowIndex = findHeaderRow(jsonData, 20);
+        
+        if (headerRowIndex === -1) {
+          reject(new Error('Unrecognized format. Please upload a valid student list with columns like "Student Name" and "Enrollment No".'));
+          return;
+        }
+        
+        console.log(`✅ Header row found at row ${headerRowIndex + 1}`);
+        
+        const headerRow = jsonData[headerRowIndex];
+        const rawHeaders = headerRow.map((h: any) => String(h || '').trim());
+        
+        console.log('📋 Headers detected:', rawHeaders.filter(h => h));
         
         const warnings: string[] = [];
-        const autoGenerated = {
-          serialNumber: false,
-        };
+        const autoGenerated = { serialNumber: false };
         
         // =============================================================
-        // COLUMN DETECTION (Exact Header Matching)
+        // STEP 2: DETECT COLUMNS
         // =============================================================
         
-        // Detect Serial Number column
-        const serialCol = findColumnByPatterns(rawHeaders, SERIAL_PATTERNS);
+        // Serial Number column
+        const serialCol = findColumnByPatterns(headerRow, SERIAL_PATTERNS);
         if (serialCol) {
-          console.log(`✅ Serial Number column found: "${serialCol.header}" at index ${serialCol.index}`);
+          console.log(`✅ S.No column: "${serialCol.header}" (column ${serialCol.index + 1})`);
         } else {
-          console.log('⚠️ Serial Number column not found, will auto-generate');
+          console.log('⚠️ S.No column not found → will auto-generate');
           autoGenerated.serialNumber = true;
-          warnings.push(`S.No column not found → Auto-generating serial numbers (1, 2, 3...)`);
+          warnings.push('S.No column not found → Auto-generated sequential numbers');
         }
         
-        // Detect Student Name column - REQUIRED
-        const nameCol = findColumnByPatterns(rawHeaders, NAME_PATTERNS);
+        // Student Name column - REQUIRED
+        const nameCol = findColumnByPatterns(headerRow, NAME_PATTERNS);
         if (nameCol) {
-          console.log(`✅ Student Name column found: "${nameCol.header}" at index ${nameCol.index}`);
+          console.log(`✅ Name column: "${nameCol.header}" (column ${nameCol.index + 1})`);
         } else {
-          console.log('❌ Student Name column NOT found - REQUIRED');
-          reject(new Error('Student Name column is required. Please ensure your Excel file has a column with header like "Name", "Student Name", or "Full Name".'));
+          reject(new Error('Student Name column missing. Please ensure your file has a column named "Name", "Student Name", or similar.'));
           return;
         }
         
-        // Detect Enrollment Number column - REQUIRED
-        const enrollmentCol = findColumnByPatterns(rawHeaders, ENROLLMENT_PATTERNS);
+        // Enrollment Number column - REQUIRED
+        const enrollmentCol = findColumnByPatterns(headerRow, ENROLLMENT_PATTERNS);
         if (enrollmentCol) {
-          console.log(`✅ Enrollment column found: "${enrollmentCol.header}" at index ${enrollmentCol.index}`);
+          console.log(`✅ Enrollment column: "${enrollmentCol.header}" (column ${enrollmentCol.index + 1})`);
         } else {
-          console.log('❌ Enrollment column NOT found - REQUIRED');
-          reject(new Error('Enrollment Number column is required. Please ensure your Excel file has a column with header like "Enrollment No", "Enrollment Number", "ER No", or "Enrolment".'));
+          reject(new Error('Enrollment Number column missing. Please ensure your file has a column named "Enrollment No", "Adm No", "ER No", or similar.'));
           return;
         }
         
-        // Detect other columns
-        const rollCol = findColumnByPatterns(rawHeaders, ROLL_PATTERNS);
-        const classCol = findColumnByPatterns(rawHeaders, CLASS_PATTERNS);
-        const sectionCol = findColumnByPatterns(rawHeaders, SECTION_PATTERNS);
-        const attendancePresentCol = findColumnByPatterns(rawHeaders, ATTENDANCE_PRESENT_PATTERNS);
-        const attendanceTotalCol = findColumnByPatterns(rawHeaders, ATTENDANCE_TOTAL_PATTERNS);
-        const behaviorCol = findColumnByPatterns(rawHeaders, BEHAVIOR_PATTERNS);
+        // Other columns
+        const rollCol = findColumnByPatterns(headerRow, ROLL_PATTERNS);
+        const classCol = findColumnByPatterns(headerRow, CLASS_PATTERNS);
+        const sectionCol = findColumnByPatterns(headerRow, SECTION_PATTERNS);
+        const attendancePresentCol = findColumnByPatterns(headerRow, ATTENDANCE_PRESENT_PATTERNS);
+        const attendanceTotalCol = findColumnByPatterns(headerRow, ATTENDANCE_TOTAL_PATTERNS);
+        const behaviorCol = findColumnByPatterns(headerRow, BEHAVIOR_PATTERNS);
         
-        // Build set of excluded column indices (non-subject columns)
+        // Build excluded indices for subject detection
         const excludeIndices = new Set<number>();
-        [serialCol, nameCol, enrollmentCol, rollCol, classCol, sectionCol, 
+        [serialCol, nameCol, enrollmentCol, rollCol, classCol, sectionCol,
          attendancePresentCol, attendanceTotalCol, behaviorCol].forEach(col => {
           if (col) excludeIndices.add(col.index);
         });
         
         // Detect subject columns
-        const subjectCols = findSubjectColumns(rawHeaders, normalizedHeaders, jsonData, excludeIndices);
-        console.log(`📚 Subject columns detected:`, subjectCols.map(s => s.name));
+        const subjectCols = findSubjectColumns(rawHeaders, jsonData, headerRowIndex, excludeIndices);
+        if (subjectCols.length > 0) {
+          console.log(`📚 Subject columns: ${subjectCols.map(s => s.name).join(', ')}`);
+        }
         
         // =============================================================
-        // PARSE STUDENT DATA
+        // STEP 3: PARSE STUDENT DATA
         // =============================================================
         
         const students: ImportedStudent[] = [];
         const serialNumbers = new Set<number>();
         let autoSerialCounter = 0;
-        for (let rowIndex = 1; rowIndex < jsonData.length; rowIndex++) {
+        let skippedRows = 0;
+        
+        for (let rowIndex = headerRowIndex + 1; rowIndex < jsonData.length; rowIndex++) {
           const row = jsonData[rowIndex];
           
           // Skip completely empty rows
@@ -346,38 +403,27 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
           }
           serialNumbers.add(serialNo);
           
-          // --- Student Name (REQUIRED - use exact value from sheet) ---
-          let name: string;
-          if (!isEmptyCell(row[nameCol.index])) {
-            name = String(row[nameCol.index]).trim();
-          } else {
-            // Skip rows with blank names - they are invalid
-            warnings.push(`Row ${rowIndex + 1}: Student Name is blank → Row skipped`);
-            continue;
+          // --- Student Name (use exact value, skip if blank) ---
+          if (isEmptyCell(row[nameCol.index])) {
+            skippedRows++;
+            continue; // Skip rows with blank names
           }
+          const name = String(row[nameCol.index]).trim();
           
-          // --- Enrollment Number (REQUIRED - use exact value from sheet) ---
-          let enrollmentNumber: string;
-          if (!isEmptyCell(row[enrollmentCol.index])) {
-            enrollmentNumber = String(row[enrollmentCol.index]).trim();
-          } else {
-            // Skip rows with blank enrollment numbers - they are invalid
-            warnings.push(`Row ${rowIndex + 1}: Enrollment Number is blank → Row skipped`);
-            continue;
+          // --- Enrollment Number (use exact value, skip if blank) ---
+          if (isEmptyCell(row[enrollmentCol.index])) {
+            skippedRows++;
+            continue; // Skip rows with blank enrollment
           }
+          const enrollmentNumber = String(row[enrollmentCol.index]).trim();
           
-          // --- Roll Number ---
+          // --- Other fields ---
           const rollNumber = rollCol && !isEmptyCell(row[rollCol.index])
-            ? String(row[rollCol.index]).trim()
-            : '';
-          
-          // --- Class & Section ---
+            ? String(row[rollCol.index]).trim() : '';
           const className = classCol && !isEmptyCell(row[classCol.index])
-            ? String(row[classCol.index]).trim()
-            : undefined;
+            ? String(row[classCol.index]).trim() : undefined;
           const section = sectionCol && !isEmptyCell(row[sectionCol.index])
-            ? String(row[sectionCol.index]).trim()
-            : undefined;
+            ? String(row[sectionCol.index]).trim() : undefined;
           
           // --- Subject Marks ---
           const subjectMarks: Record<string, number> = {};
@@ -393,16 +439,13 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
           
           // --- Attendance ---
           const attendancePresent = attendancePresentCol && !isEmptyCell(row[attendancePresentCol.index])
-            ? parseInt(String(row[attendancePresentCol.index])) || 0
-            : 0;
+            ? parseInt(String(row[attendancePresentCol.index])) || 0 : 0;
           const attendanceTotal = attendanceTotalCol && !isEmptyCell(row[attendanceTotalCol.index])
-            ? parseInt(String(row[attendanceTotalCol.index])) || 0
-            : 0;
+            ? parseInt(String(row[attendanceTotalCol.index])) || 0 : 0;
           
           // --- Behavior Notes ---
           const behaviorNotes = behaviorCol && !isEmptyCell(row[behaviorCol.index])
-            ? String(row[behaviorCol.index]).trim()
-            : undefined;
+            ? String(row[behaviorCol.index]).trim() : undefined;
           
           students.push({
             serialNo,
@@ -418,19 +461,25 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
           });
         }
         
+        if (skippedRows > 0) {
+          warnings.push(`${skippedRows} row(s) skipped due to missing Name or Enrollment Number`);
+        }
+        
         if (students.length === 0) {
-          reject(new Error('No valid student data found. Ensure the Excel file has data rows below the header.'));
+          reject(new Error('No valid student data found. Ensure the file has data rows with Student Name and Enrollment Number filled in.'));
           return;
         }
         
-        
-        console.log(`✅ Imported ${students.length} students`);
-        console.log(`📝 Warnings:`, warnings);
+        console.log(`✅ Successfully imported ${students.length} students from header row ${headerRowIndex + 1}`);
+        if (warnings.length > 0) {
+          console.log('⚠️ Warnings:', warnings);
+        }
         
         resolve({
           students,
           autoGenerated,
           headers: rawHeaders,
+          headerRowIndex: headerRowIndex + 1, // 1-based for display
           detectedColumns: {
             serialNo: serialCol,
             name: nameCol,
@@ -467,7 +516,6 @@ export function createStudentsFromImport(
       
       // Map imported subject marks to selected subjects
       selectedSubjects.forEach(subject => {
-        // Check if this subject exists in imported marks (case-insensitive)
         const normalizedSubject = subject.toLowerCase();
         let foundMark: number | undefined;
         
@@ -481,82 +529,41 @@ export function createStudentsFromImport(
           }
         }
         
-        subjectMarks[subject] = foundMark ?? 0;
-        
-        // Auto-assign rating based on marks
         if (foundMark !== undefined) {
-          if (foundMark >= 85) subjectRatings[subject] = 'Excellent';
+          subjectMarks[subject] = foundMark;
+          // Convert marks to ratings
+          if (foundMark >= 90) subjectRatings[subject] = 'Excellent';
           else if (foundMark >= 70) subjectRatings[subject] = 'Good';
           else if (foundMark >= 50) subjectRatings[subject] = 'Average';
           else subjectRatings[subject] = 'Needs Improvement';
-        } else {
-          subjectRatings[subject] = 'Good';
         }
       });
       
-      // Calculate percentage and attendance
-      const percentage = calculatePercentage(subjectMarks);
-      const attendancePercentage = imp.attendanceTotal > 0
-        ? Math.round((imp.attendancePresent / imp.attendanceTotal) * 100)
-        : 0;
+      // Calculate totals
+      const totalMarks = Object.values(subjectMarks).reduce((sum, m) => sum + m, 0);
+      const maxMarks = Object.keys(subjectMarks).length * 100;
+      const percentage = maxMarks > 0 ? Math.round((totalMarks / maxMarks) * 100) : 0;
+      
+      // Create base student with required fields
+      const baseStudent = createEmptyStudent(imp.serialNo, selectedSubjects);
       
       return {
-        id: crypto.randomUUID(),
+        ...baseStudent,
+        id: `student-${imp.serialNo}-${Date.now()}`,
         serialNo: imp.serialNo,
         enrollmentNumber: imp.enrollmentNumber,
         name: imp.name,
         rollNumber: imp.rollNumber,
-        photo: '',
+        className: imp.className,
+        section: imp.section,
         subjectMarks,
         subjectRatings,
+        total: totalMarks,
+        percentage,
         attendancePresent: imp.attendancePresent || 0,
         attendanceTotal: imp.attendanceTotal || 0,
-        attendancePercentage,
         behaviorNotes: imp.behaviorNotes || '',
-        learningSkills: {},
         moodRating: getMoodFromPerformance(percentage),
-        strengths: [],
-        improvements: [],
-        nextSteps: [],
-        remark: '',
-        teacherNotes: '',
-        isGeneratingRemark: false,
-        total: Object.values(subjectRatings).reduce((sum, r) => 
-          sum + ({ 'Excellent': 4, 'Good': 3, 'Average': 2, 'Needs Improvement': 1 }[r] || 0), 0
-        ),
-        percentage,
       };
     });
-}
-
-/**
- * Generate a sample Excel template for teachers
- */
-export function generateSampleTemplate(): void {
-  const wb = XLSX.utils.book_new();
-  
-  const sampleData = [
-    ['S.No', 'Student Name', 'Enrollment No', 'English', 'Hindi', 'Mathematics', 'Science', 'Social Studies'],
-    [1, 'Rahul Sharma', 'ENR001', 85, 78, 92, 88, 76],
-    [2, 'Priya Patel', 'ENR002', 90, 85, 88, 95, 82],
-    [3, 'Amit Kumar', 'ENR003', 72, 80, 65, 70, 78],
-    [4, 'Neha Singh', 'ENR004', 95, 92, 98, 91, 89],
-    [5, 'Ravi Verma', 'ENR005', 68, 75, 72, 65, 70],
-  ];
-  
-  const ws = XLSX.utils.aoa_to_sheet(sampleData);
-  
-  ws['!cols'] = [
-    { wch: 6 },   // S.No
-    { wch: 20 },  // Student Name
-    { wch: 15 },  // Enrollment No
-    { wch: 10 },  // English
-    { wch: 10 },  // Hindi
-    { wch: 12 },  // Mathematics
-    { wch: 10 },  // Science
-    { wch: 14 },  // Social Studies
-  ];
-  
-  XLSX.utils.book_append_sheet(wb, ws, 'VI Award List Template');
-  XLSX.writeFile(wb, 'VI_Award_List_Template.xlsx');
 }
