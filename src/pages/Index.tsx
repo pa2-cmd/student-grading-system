@@ -6,9 +6,10 @@ import { AssessmentTable } from '@/components/AssessmentTable';
 import { SubjectSelector } from '@/components/SubjectSelector';
 import { AnalyticsDashboard } from '@/components/AnalyticsDashboard';
 import { ExcelDropZone } from '@/components/ExcelDropZone';
+import { ExcelPreview } from '@/components/ExcelPreview';
 import { exportToExcel } from '@/utils/excelExport';
 import { exportToPDF } from '@/utils/pdfExport';
-import { importStudentsFromExcel, createStudentsFromImport } from '@/utils/excelImport';
+import { importStudentsFromExcel, createStudentsFromImport, ExcelImportResult } from '@/utils/excelImport';
 import { generateRemark, generateStrengthsWeaknessesNextSteps } from '@/utils/remarkGenerator';
 import { calculateClassAnalytics } from '@/types/assessment';
 import { toast } from 'sonner';
@@ -37,6 +38,7 @@ const Index = () => {
 
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [excelPreview, setExcelPreview] = useState<ExcelImportResult | null>(null);
 
   const handleGenerateRemark = useCallback(async (studentId: string) => {
     const student = data.students.find(s => s.id === studentId);
@@ -117,29 +119,24 @@ const Index = () => {
     try {
       toast.info('Reading Excel file...');
       const result = await importStudentsFromExcel(file);
-      
-      // Show warnings if any (auto-generated columns, filled blanks, etc.)
-      if (result.warnings.length > 0) {
-        // Show first 3 warnings as individual toasts, rest as summary
-        const displayWarnings = result.warnings.slice(0, 3);
-        displayWarnings.forEach(warning => toast.warning(warning, { duration: 5000 }));
-        
-        if (result.warnings.length > 3) {
-          toast.info(`+ ${result.warnings.length - 3} more adjustments made`);
-        }
-      }
-      
-      const students = createStudentsFromImport(result.students, data.selectedSubjects);
-      
-      const firstClassName = result.students.find(s => s.className)?.className;
-      if (firstClassName) updateSchoolInfo('className', firstClassName);
-      
-      importStudents(students);
-      toast.success(`Imported ${students.length} students!`);
+      // Show preview instead of immediate import
+      setExcelPreview(result);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to import');
     }
-  }, [data.selectedSubjects, importStudents, updateSchoolInfo]);
+  }, []);
+
+  const confirmExcelImport = useCallback(() => {
+    if (!excelPreview) return;
+    
+    const students = createStudentsFromImport(excelPreview.students, data.selectedSubjects);
+    const firstClassName = excelPreview.students.find(s => s.className)?.className;
+    if (firstClassName) updateSchoolInfo('className', firstClassName);
+    
+    importStudents(students);
+    toast.success(`Imported ${students.length} students!`);
+    setExcelPreview(null);
+  }, [excelPreview, data.selectedSubjects, importStudents, updateSchoolInfo]);
 
   const confirmReset = useCallback(() => {
     resetAll();
@@ -175,11 +172,22 @@ const Index = () => {
           </TabsList>
 
           <TabsContent value="students" className="space-y-6">
+            {/* Excel Preview Dialog */}
+            {excelPreview && (
+              <ExcelPreview
+                result={excelPreview}
+                onConfirm={confirmExcelImport}
+                onCancel={() => setExcelPreview(null)}
+              />
+            )}
+
             {/* Drag & Drop Excel Import Zone */}
-            <ExcelDropZone 
-              onFileSelect={handleImportExcel} 
-              className="mb-4"
-            />
+            {!excelPreview && (
+              <ExcelDropZone 
+                onFileSelect={handleImportExcel} 
+                className="mb-4"
+              />
+            )}
 
             <SubjectSelector
               selectedSubjects={data.selectedSubjects}
