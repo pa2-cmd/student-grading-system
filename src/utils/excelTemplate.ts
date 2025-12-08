@@ -5,8 +5,9 @@ import * as XLSX from 'xlsx';
  * Sheet name: StudentList
  * Headers: S.No | Student Name | Enrollment No
  * 50 empty rows below headers
+ * @param classSection - Optional class-section string for the filename
  */
-export function downloadStudentTemplate(): void {
+export function downloadStudentTemplate(classSection?: string): void {
   // Create workbook
   const workbook = XLSX.utils.book_new();
   
@@ -34,9 +35,13 @@ export function downloadStudentTemplate(): void {
   // Add worksheet to workbook with exact sheet name
   XLSX.utils.book_append_sheet(workbook, worksheet, 'StudentList');
   
-  // Generate filename with date
-  const date = new Date().toISOString().split('T')[0];
-  const filename = `Student_Import_Template_${date}.xlsx`;
+  // Generate filename with class-section
+  const sanitizedClassSection = classSection 
+    ? classSection.replace(/[^a-zA-Z0-9-]/g, '-').replace(/-+/g, '-').trim()
+    : '';
+  const filename = sanitizedClassSection 
+    ? `student-grading-${sanitizedClassSection}.xlsx`
+    : 'student-grading-template.xlsx';
   
   // Download the file
   XLSX.writeFile(workbook, filename);
