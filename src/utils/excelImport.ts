@@ -11,10 +11,57 @@ export interface ImportedStudent {
   attendanceTotal?: number;
   behaviorNotes?: string;
 }
+/**
+ * Smart Column Detection Logic:
+ * 
+ * 1. Normalize headers: trim whitespace, convert to lowercase
+ * 2. Check against known variations (exact or partial matches)
+ * 3. For "name" columns: also check if header contains "name" anywhere
+ * 4. If multiple matches found, prefer the one with most unique non-empty values
+ * 5. Return user-friendly error messages, never crash
+ */
+
+// Accepted variations for each field type
+const NAME_VARIATIONS = [
+  'name', 'student name', 'full name', 'student', 'student_name', 
+  'studentname', 'child name', 'learner name', "student's name",
+  'pupil name', 'scholar name', 'candidate name'
+];
+
+const ROLL_VARIATIONS = [
+  'roll', 'roll no', 'roll number', 'rollno', 'roll no.', 'roll_no',
+  'sr no', 'sr. no', 'sr.no', 'serial', 'serial no', 'serial number',
+  'admission no', 'admission number', 'adm no', 'adm. no',
+  'reg no', 'registration no', 'id', 'student id'
+];
+
+const CLASS_VARIATIONS = [
+  'class', 'grade', 'standard', 'std', 'form', 'year', 'level'
+];
+
+const SECTION_VARIATIONS = [
+  'section', 'div', 'division', 'sec', 'stream', 'batch'
+];
+
+const ATTENDANCE_PRESENT_VARIATIONS = [
+  'present', 'days present', 'attendance present', 'present days',
+  'attended', 'days attended'
+];
+
+const ATTENDANCE_TOTAL_VARIATIONS = [
+  'total days', 'working days', 'total', 'attendance total',
+  'school days', 'total working days'
+];
+
+const BEHAVIOR_VARIATIONS = [
+  'behavior', 'behaviour', 'notes', 'remarks', 'teacher notes',
+  'behavior notes', 'behaviour notes', 'comment', 'comments',
+  'teacher comment', 'observation', 'observations'
+];
 
 /**
  * Parses an Excel file and extracts student data with marks, attendance, behavior
- * Auto-detects columns and maps them intelligently
+ * Auto-detects columns and maps them intelligently with smart fallbacks
  */
 export async function importStudentsFromExcel(file: File): Promise<ImportedStudent[]> {
   return new Promise((resolve, reject) => {
@@ -34,29 +81,37 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
           return;
         }
         
-        // Find column indices (case-insensitive)
-        const headerRow = jsonData[0].map((h: any) => String(h || '').toLowerCase().trim());
+        // Normalize headers: trim extra spaces and convert to lowercase
+        const rawHeaders = jsonData[0].map((h: any) => String(h || ''));
+        const headerRow = rawHeaders.map(h => h.toLowerCase().trim().replace(/\s+/g, ' '));
         
-        // Core columns
-        const nameColIndex = findColumnIndex(headerRow, ['name', 'student name', 'student', 'full name', 'student\'s name']);
-        const rollColIndex = findColumnIndex(headerRow, ['roll', 'roll no', 'roll number', 'rollno', 'roll no.', 'sr no', 'sr. no', 'serial', 'admission no']);
-        const classColIndex = findColumnIndex(headerRow, ['class', 'grade', 'standard']);
-        const sectionColIndex = findColumnIndex(headerRow, ['section', 'div', 'division']);
+        // Smart column detection for name field
+        // First try exact/partial matches, then fallback to "contains name" logic
+        let nameColIndex = findSmartColumnIndex(headerRow, NAME_VARIATIONS, jsonData);
         
-        // Attendance columns
-        const attendancePresentIndex = findColumnIndex(headerRow, ['present', 'days present', 'attendance present']);
-        const attendanceTotalIndex = findColumnIndex(headerRow, ['total days', 'working days', 'total', 'attendance total']);
+        // If no match found, try finding any column containing "name"
+        if (nameColIndex === -1) {
+          nameColIndex = findColumnContaining(headerRow, 'name', jsonData);
+        }
         
-        // Behavior notes
-        const behaviorIndex = findColumnIndex(headerRow, ['behavior', 'behaviour', 'notes', 'remarks', 'teacher notes', 'behavior notes']);
+        // If still no match, return user-friendly error
+        if (nameColIndex === -1) {
+          reject(new Error(
+            "No name column found. Please include a column such as 'Name', 'Student Name', 'Full Name', or any header containing the word 'name'."
+          ));
+          return;
+        }
+        
+        // Detect other columns with smart matching
+        const rollColIndex = findSmartColumnIndex(headerRow, ROLL_VARIATIONS, jsonData);
+        const classColIndex = findSmartColumnIndex(headerRow, CLASS_VARIATIONS, jsonData);
+        const sectionColIndex = findSmartColumnIndex(headerRow, SECTION_VARIATIONS, jsonData);
+        const attendancePresentIndex = findSmartColumnIndex(headerRow, ATTENDANCE_PRESENT_VARIATIONS, jsonData);
+        const attendanceTotalIndex = findSmartColumnIndex(headerRow, ATTENDANCE_TOTAL_VARIATIONS, jsonData);
+        const behaviorIndex = findSmartColumnIndex(headerRow, BEHAVIOR_VARIATIONS, jsonData);
         
         // Find subject columns (anything with marks, score, or known subject names)
         const subjectColumns = findSubjectColumns(headerRow);
-        
-        if (nameColIndex === -1) {
-          reject(new Error('Could not find a "Name" column. Please ensure your file has a column named "Name" or "Student Name".'));
-          return;
-        }
         
         // Extract student data
         const students: ImportedStudent[] = [];
@@ -65,6 +120,7 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
           const row = jsonData[i];
           const name = String(row[nameColIndex] || '').trim();
           
+          // Skip empty rows
           if (!name) continue;
           
           // Extract subject marks
@@ -79,7 +135,7 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
             }
           });
           
-          // Extract attendance
+          // Extract attendance with safe parsing
           let attendancePresent = 0;
           let attendanceTotal = 0;
           if (attendancePresentIndex !== -1) {
@@ -102,7 +158,7 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
         }
         
         if (students.length === 0) {
-          reject(new Error('No valid student data found in the Excel file'));
+          reject(new Error('No valid student data found in the Excel file. Please ensure there is data below the header row.'));
           return;
         }
         
@@ -121,12 +177,140 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
   });
 }
 
-function findColumnIndex(headers: string[], possibleNames: string[]): number {
-  for (const name of possibleNames) {
-    const index = headers.findIndex(h => h.includes(name));
-    if (index !== -1) return index;
+/**
+ * Smart Column Index Finder
+ * 
+ * Detection logic:
+ * 1. Trim and normalize all headers to lowercase
+ * 2. Check if any header exactly matches a known variation
+ * 3. Check if any header contains a known variation as substring
+ * 4. If multiple matches found, pick the column with most unique non-empty values
+ * 
+ * @param headers - Normalized (lowercase, trimmed) header array
+ * @param variations - Array of known acceptable column name variations
+ * @param jsonData - Full data for counting unique values if needed
+ * @returns Column index or -1 if not found
+ */
+function findSmartColumnIndex(
+  headers: string[], 
+  variations: string[],
+  jsonData?: any[][]
+): number {
+  const matchedIndices: number[] = [];
+  
+  // First pass: exact matches (header equals variation)
+  for (let i = 0; i < headers.length; i++) {
+    const header = headers[i];
+    if (variations.includes(header)) {
+      matchedIndices.push(i);
+    }
   }
-  return -1;
+  
+  // Second pass: partial matches (header contains variation)
+  if (matchedIndices.length === 0) {
+    for (let i = 0; i < headers.length; i++) {
+      const header = headers[i];
+      for (const variation of variations) {
+        if (header.includes(variation)) {
+          matchedIndices.push(i);
+          break; // Avoid adding same index multiple times
+        }
+      }
+    }
+  }
+  
+  // No matches found
+  if (matchedIndices.length === 0) {
+    return -1;
+  }
+  
+  // Single match - return it
+  if (matchedIndices.length === 1) {
+    return matchedIndices[0];
+  }
+  
+  // Multiple matches - pick column with most unique non-empty values
+  if (jsonData && jsonData.length > 1) {
+    let bestIndex = matchedIndices[0];
+    let maxUniqueCount = 0;
+    
+    for (const colIndex of matchedIndices) {
+      const uniqueValues = new Set<string>();
+      for (let row = 1; row < jsonData.length; row++) {
+        const value = String(jsonData[row][colIndex] || '').trim();
+        if (value) {
+          uniqueValues.add(value);
+        }
+      }
+      
+      if (uniqueValues.size > maxUniqueCount) {
+        maxUniqueCount = uniqueValues.size;
+        bestIndex = colIndex;
+      }
+    }
+    
+    return bestIndex;
+  }
+  
+  // Fallback to first match
+  return matchedIndices[0];
+}
+
+/**
+ * Fallback finder: looks for any column header containing a keyword
+ * Used when specific variations don't match
+ * 
+ * @param headers - Normalized header array
+ * @param keyword - Keyword to search for (e.g., "name")
+ * @param jsonData - Full data for tie-breaking
+ * @returns Column index or -1 if not found
+ */
+function findColumnContaining(
+  headers: string[], 
+  keyword: string,
+  jsonData?: any[][]
+): number {
+  const matchedIndices: number[] = [];
+  
+  // Find all columns containing the keyword
+  for (let i = 0; i < headers.length; i++) {
+    if (headers[i].includes(keyword.toLowerCase())) {
+      matchedIndices.push(i);
+    }
+  }
+  
+  if (matchedIndices.length === 0) {
+    return -1;
+  }
+  
+  if (matchedIndices.length === 1) {
+    return matchedIndices[0];
+  }
+  
+  // Multiple matches: pick column with most unique non-empty values
+  if (jsonData && jsonData.length > 1) {
+    let bestIndex = matchedIndices[0];
+    let maxUniqueCount = 0;
+    
+    for (const colIndex of matchedIndices) {
+      const uniqueValues = new Set<string>();
+      for (let row = 1; row < jsonData.length; row++) {
+        const value = String(jsonData[row][colIndex] || '').trim();
+        if (value) {
+          uniqueValues.add(value);
+        }
+      }
+      
+      if (uniqueValues.size > maxUniqueCount) {
+        maxUniqueCount = uniqueValues.size;
+        bestIndex = colIndex;
+      }
+    }
+    
+    return bestIndex;
+  }
+  
+  return matchedIndices[0];
 }
 
 // Known subject names for auto-detection
