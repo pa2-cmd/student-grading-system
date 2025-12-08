@@ -46,6 +46,7 @@ export function AssessmentTable({
           <thead>
             <tr>
               <th className="w-12 text-center">S.No</th>
+              <th className="w-24 text-center">Enrollment No</th>
               <th className="w-20 text-center">Roll</th>
               <th className="min-w-[150px]">Student Name</th>
               {selectedSubjects.map(subject => (
