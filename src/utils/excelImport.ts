@@ -2,9 +2,9 @@ import * as XLSX from 'xlsx';
 import { Student, createEmptyStudent, calculatePercentage, getMoodFromPerformance, SKILL_OPTIONS } from '@/types/assessment';
 
 export interface ImportedStudent {
-  serialNo: number; // Primary identifier from Excel
-  enrollmentNumber: string; // Unique student ID for reports
-  name: string;
+  serialNo: number; // Primary identifier from Excel (MANDATORY)
+  enrollmentNumber: string | null; // Unique student ID for reports (optional, auto-blank if missing)
+  name: string | null; // Student name (optional)
   rollNumber: string;
   className?: string;
   section?: string;
@@ -16,14 +16,19 @@ export interface ImportedStudent {
 /**
  * Smart Column Detection Logic:
  * 
+ * MATCHING PRIORITY:
+ * 1. Primary match → Serial Number (MANDATORY - must exist)
+ * 2. Secondary match → Enrollment Number (optional)
+ * 3. Fallback → Name (optional, only if present)
+ * 
+ * Detection logic:
  * 1. Normalize headers: trim whitespace, convert to lowercase
  * 2. Check against known variations (exact or partial matches)
- * 3. For "name" columns: also check if header contains "name" anywhere
- * 4. If multiple matches found, prefer the one with most unique non-empty values
- * 5. Return user-friendly error messages, never crash
+ * 3. If multiple matches found, prefer the one with most unique non-empty values
+ * 4. Return user-friendly error messages, never crash
  * 
- * IMPORTANT: Serial Number is now the PRIMARY identifier for each student row.
- * Enrollment Number is the UNIQUE ID displayed on reports and PDFs.
+ * IMPORTANT: Serial Number is now the ONLY MANDATORY column.
+ * Name and Enrollment Number are optional.
  */
 
 // Accepted variations for each field type
@@ -110,29 +115,33 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
         const rawHeaders = jsonData[0].map((h: any) => String(h || ''));
         const headerRow = rawHeaders.map(h => h.toLowerCase().trim().replace(/\s+/g, ' '));
         
-        // Smart column detection for Serial Number (PRIMARY IDENTIFIER)
-        // Serial Number is required and must be unique
+        /**
+         * Column Detection Order:
+         * 1. Serial Number (MANDATORY) - Primary identifier
+         * 2. Enrollment Number (optional) - Secondary identifier for reports
+         * 3. Name (optional) - Fallback reference
+         */
+        
+        // Detect Serial Number column (PRIMARY IDENTIFIER - MANDATORY)
         const serialColIndex = findSmartColumnIndex(headerRow, SERIAL_VARIATIONS, jsonData);
         
-        // Detect Enrollment Number column (unique student ID for reports)
-        const enrollmentColIndex = findSmartColumnIndex(headerRow, ENROLLMENT_VARIATIONS, jsonData);
-        
-        // Smart column detection for name field
-        // First try exact/partial matches, then fallback to "contains name" logic
-        let nameColIndex = findSmartColumnIndex(headerRow, NAME_VARIATIONS, jsonData);
-        
-        // If no match found, try finding any column containing "name"
-        if (nameColIndex === -1) {
-          nameColIndex = findColumnContaining(headerRow, 'name', jsonData);
-        }
-        
-        // If still no match, return user-friendly error
-        if (nameColIndex === -1) {
+        // Serial Number is MANDATORY - throw error if not found
+        if (serialColIndex === -1) {
           reject(new Error(
-            "No name column found. Please include a column such as 'Name', 'Student Name', 'Full Name', or any header containing the word 'name'."
+            "Serial Number column not found. Please include a Serial Number (S.No) column."
           ));
           return;
         }
+        
+        // Detect Enrollment Number column (OPTIONAL - secondary identifier)
+        const enrollmentColIndex = findSmartColumnIndex(headerRow, ENROLLMENT_VARIATIONS, jsonData);
+        
+        // Detect Name column (OPTIONAL - fallback reference)
+        let nameColIndex = findSmartColumnIndex(headerRow, NAME_VARIATIONS, jsonData);
+        if (nameColIndex === -1) {
+          nameColIndex = findColumnContaining(headerRow, 'name', jsonData);
+        }
+        // Note: Name is no longer required - we don't throw an error if missing
         
         // Detect other columns with smart matching
         const rollColIndex = findSmartColumnIndex(headerRow, ROLL_VARIATIONS, jsonData);
@@ -151,39 +160,33 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
         
         for (let i = 1; i < jsonData.length; i++) {
           const row = jsonData[i];
-          const name = String(row[nameColIndex] || '').trim();
           
-          // Skip empty rows
-          if (!name) continue;
+          // Extract Serial Number (PRIMARY IDENTIFIER - MANDATORY)
+          // Must exist in the Excel file
+          const rawSerial = row[serialColIndex];
+          const serialNo = parseInt(String(rawSerial || ''));
           
-          // Extract Serial Number (primary identifier)
-          // If serial column exists, use it; otherwise auto-generate from row index
-          let serialNo: number;
-          if (serialColIndex !== -1) {
-            const rawSerial = row[serialColIndex];
-            serialNo = parseInt(String(rawSerial || '')) || i;
-          } else {
-            serialNo = i; // Auto-generate if not found
-          }
+          // Skip rows with invalid/empty serial numbers
+          if (isNaN(serialNo) || serialNo <= 0) continue;
           
           // Check for duplicate serial numbers
           if (serialNumbers.has(serialNo)) {
             reject(new Error(
-              `Duplicate Serial Number found: ${serialNo}. Each student must have a unique Serial Number.`
+              "Duplicate Serial Numbers found. Please correct the Excel file."
             ));
             return;
           }
           serialNumbers.add(serialNo);
           
-          // Extract Enrollment Number (unique ID for reports)
-          // If enrollment column exists, use it; otherwise auto-generate
-          let enrollmentNumber: string;
-          if (enrollmentColIndex !== -1) {
-            enrollmentNumber = String(row[enrollmentColIndex] || '').trim();
-          } else {
-            // Auto-generate enrollment number if missing (format: ENR-001)
-            enrollmentNumber = `ENR-${String(serialNo).padStart(3, '0')}`;
-          }
+          // Extract Name (OPTIONAL - null if missing)
+          const name: string | null = nameColIndex !== -1 
+            ? String(row[nameColIndex] || '').trim() || null 
+            : null;
+          
+          // Extract Enrollment Number (OPTIONAL - null/blank if missing)
+          const enrollmentNumber: string | null = enrollmentColIndex !== -1 
+            ? String(row[enrollmentColIndex] || '').trim() || null 
+            : null;
           
           // Extract subject marks
           const subjectMarks: Record<string, number> = {};
@@ -222,7 +225,7 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
         }
         
         if (students.length === 0) {
-          reject(new Error('No valid student data found in the Excel file. Please ensure there is data below the header row.'));
+          reject(new Error('No valid student data found in the Excel file. Please ensure there are rows with valid Serial Numbers.'));
           return;
         }
         
@@ -436,23 +439,29 @@ function findSubjectColumns(headers: string[]): { index: number; name: string }[
 
 /**
  * Converts imported student data to full Student objects
- * Uses Serial Number as the primary identifier (from Excel)
- * Enrollment Number is the unique student ID for reports
+ * 
+ * Matching Priority:
+ * 1. Primary match → Serial Number (from Excel)
+ * 2. Secondary match → Enrollment Number
+ * 3. Fallback → Name (only if present)
  */
 export function createStudentsFromImport(
   importedStudents: ImportedStudent[],
   selectedSubjects: string[]
 ): Student[] {
-  return importedStudents.map((imported) => {
+  // Sort by Serial Number for consistent ordering
+  const sortedStudents = [...importedStudents].sort((a, b) => a.serialNo - b.serialNo);
+  
+  return sortedStudents.map((imported) => {
     // Create student with imported serial number (not index)
     const student = createEmptyStudent(imported.serialNo, selectedSubjects);
     
     // Set primary identifiers
     student.serialNo = imported.serialNo; // From Excel (not editable)
-    student.enrollmentNumber = imported.enrollmentNumber; // Unique ID for reports
+    student.enrollmentNumber = imported.enrollmentNumber || ''; // Blank if missing
     
-    // Set basic info
-    student.name = imported.name;
+    // Set basic info (name can be null)
+    student.name = imported.name || '';
     student.rollNumber = imported.rollNumber;
     
     // Set subject marks if provided
@@ -494,12 +503,18 @@ export function createStudentsFromImport(
 
 /**
  * Generates a sample Excel template for teachers
- * Includes Serial Number (primary identifier) and Enrollment Number (unique ID for reports)
+ * 
+ * Column Order:
+ * 1. S.No (Serial Number) - MANDATORY primary identifier
+ * 2. Enrollment No - Optional, secondary identifier for reports
+ * 3. Student Name - Optional, fallback reference
+ * 4. Other columns (Roll No, Class, Subjects, etc.)
  */
 export function generateSampleTemplate(): void {
   const wb = XLSX.utils.book_new();
   
-  // Updated template with Serial Number and Enrollment Number columns
+  // Template with Serial Number as mandatory column
+  // Name and Enrollment are optional but shown as examples
   const sampleData = [
     ['S.No', 'Enrollment No', 'Student Name', 'Roll No', 'Class', 'Section', 'English', 'Hindi', 'Mathematics', 'Science', 'Social Studies', 'Days Present', 'Total Days', 'Behavior Notes'],
     [1, 'ENR-001', 'Aarav Sharma', '1', '5', 'A', 85, 78, 92, 88, 75, 45, 50, 'Very attentive and helpful'],
