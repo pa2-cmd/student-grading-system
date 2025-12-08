@@ -269,14 +269,25 @@ export function getDefaultReportSettings(): ReportSettings {
   };
 }
 
+// Comment tone options for report generation
+export type CommentTone = 'encouraging' | 'formal' | 'warm' | 'strict' | 'balanced';
+
+export const COMMENT_TONES: { value: CommentTone; label: string; description: string }[] = [
+  { value: 'encouraging', label: 'Encouraging', description: 'Positive and motivating feedback' },
+  { value: 'formal', label: 'Formal', description: 'Professional and structured remarks' },
+  { value: 'warm', label: 'Warm', description: 'Friendly and caring tone' },
+  { value: 'strict', label: 'Strict', description: 'Direct and improvement-focused' },
+  { value: 'balanced', label: 'Balanced', description: 'Mix of praise and constructive feedback' },
+];
+
 export function getDefaultAssessmentData(): AssessmentData {
   const defaultSubjects = ['English', 'Hindi', 'Mathematics', 'Science', 'Social Studies'];
   
   return {
-    schoolName: 'Cambridge Court High School',
+    schoolName: '',
     className: '',
     section: '',
-    academicYear: new Date().getFullYear().toString(),
+    academicYear: `${new Date().getFullYear()}-${(new Date().getFullYear() + 1).toString().slice(-2)}`,
     term: 'Term 1',
     totalStrength: 0,
     students: [createEmptyStudent(1, defaultSubjects)],
