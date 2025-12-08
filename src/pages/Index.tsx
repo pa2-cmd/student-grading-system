@@ -5,6 +5,7 @@ import { ActionButtons } from '@/components/ActionButtons';
 import { AssessmentTable } from '@/components/AssessmentTable';
 import { SubjectSelector } from '@/components/SubjectSelector';
 import { AnalyticsDashboard } from '@/components/AnalyticsDashboard';
+import { ExcelDropZone } from '@/components/ExcelDropZone';
 import { exportToExcel } from '@/utils/excelExport';
 import { exportToPDF } from '@/utils/pdfExport';
 import { importStudentsFromExcel, createStudentsFromImport } from '@/utils/excelImport';
@@ -162,6 +163,12 @@ const Index = () => {
           </TabsList>
 
           <TabsContent value="students" className="space-y-6">
+            {/* Drag & Drop Excel Import Zone */}
+            <ExcelDropZone 
+              onFileSelect={handleImportExcel} 
+              className="mb-4"
+            />
+
             <SubjectSelector
               selectedSubjects={data.selectedSubjects}
               onUpdateSubjects={updateSelectedSubjects}
