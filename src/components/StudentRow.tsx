@@ -81,7 +81,7 @@ export function StudentRow({
       {selectedSubjects.map(subject => (
         <td key={subject}>
           <SkillSelect
-            value={student.subjectRatings[subject] || 'Good'}
+            value={student.subjectRatings?.[subject] || 'Good'}
             onChange={(value: SkillRating) => onUpdateSubjectRating(subject, value)}
           />
         </td>
