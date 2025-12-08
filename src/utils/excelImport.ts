@@ -2,6 +2,8 @@ import * as XLSX from 'xlsx';
 import { Student, createEmptyStudent, calculatePercentage, getMoodFromPerformance, SKILL_OPTIONS } from '@/types/assessment';
 
 export interface ImportedStudent {
+  serialNo: number; // Primary identifier from Excel
+  enrollmentNumber: string; // Unique student ID for reports
   name: string;
   rollNumber: string;
   className?: string;
@@ -19,6 +21,9 @@ export interface ImportedStudent {
  * 3. For "name" columns: also check if header contains "name" anywhere
  * 4. If multiple matches found, prefer the one with most unique non-empty values
  * 5. Return user-friendly error messages, never crash
+ * 
+ * IMPORTANT: Serial Number is now the PRIMARY identifier for each student row.
+ * Enrollment Number is the UNIQUE ID displayed on reports and PDFs.
  */
 
 // Accepted variations for each field type
@@ -28,11 +33,31 @@ const NAME_VARIATIONS = [
   'pupil name', 'scholar name', 'candidate name'
 ];
 
+/**
+ * Serial Number variations - Primary identifier from Excel (not editable)
+ * Used internally to reference and track students
+ */
+const SERIAL_VARIATIONS = [
+  'serial', 'serial no', 'serial number', 's.no', 's no', 'sno', 'sr no', 
+  'sr. no', 'sr.no', 'sr', 's.no.', 'sl no', 'sl. no', 'slno', 'sl'
+];
+
+/**
+ * Enrollment Number variations - Unique student ID shown on reports
+ * This is the student's official ID for reports and PDFs
+ */
+const ENROLLMENT_VARIATIONS = [
+  'enrollment', 'enrollment no', 'enrollment number', 'enroll no', 'enroll',
+  'enrolment', 'enrolment no', 'enrolment number', 'admission no', 'adm no',
+  'adm. no', 'admission number', 'student id', 'id no', 'id number', 'reg no',
+  'registration no', 'registration number', 'uid', 'unique id'
+];
+
+/**
+ * Roll Number variations - Kept separate from Serial/Enrollment
+ */
 const ROLL_VARIATIONS = [
-  'roll', 'roll no', 'roll number', 'rollno', 'roll no.', 'roll_no',
-  'sr no', 'sr. no', 'sr.no', 'serial', 'serial no', 'serial number',
-  'admission no', 'admission number', 'adm no', 'adm. no',
-  'reg no', 'registration no', 'id', 'student id'
+  'roll', 'roll no', 'roll number', 'rollno', 'roll no.', 'roll_no'
 ];
 
 const CLASS_VARIATIONS = [
@@ -85,6 +110,13 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
         const rawHeaders = jsonData[0].map((h: any) => String(h || ''));
         const headerRow = rawHeaders.map(h => h.toLowerCase().trim().replace(/\s+/g, ' '));
         
+        // Smart column detection for Serial Number (PRIMARY IDENTIFIER)
+        // Serial Number is required and must be unique
+        const serialColIndex = findSmartColumnIndex(headerRow, SERIAL_VARIATIONS, jsonData);
+        
+        // Detect Enrollment Number column (unique student ID for reports)
+        const enrollmentColIndex = findSmartColumnIndex(headerRow, ENROLLMENT_VARIATIONS, jsonData);
+        
         // Smart column detection for name field
         // First try exact/partial matches, then fallback to "contains name" logic
         let nameColIndex = findSmartColumnIndex(headerRow, NAME_VARIATIONS, jsonData);
@@ -115,6 +147,7 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
         
         // Extract student data
         const students: ImportedStudent[] = [];
+        const serialNumbers = new Set<number>(); // Track for duplicate detection
         
         for (let i = 1; i < jsonData.length; i++) {
           const row = jsonData[i];
@@ -122,6 +155,35 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
           
           // Skip empty rows
           if (!name) continue;
+          
+          // Extract Serial Number (primary identifier)
+          // If serial column exists, use it; otherwise auto-generate from row index
+          let serialNo: number;
+          if (serialColIndex !== -1) {
+            const rawSerial = row[serialColIndex];
+            serialNo = parseInt(String(rawSerial || '')) || i;
+          } else {
+            serialNo = i; // Auto-generate if not found
+          }
+          
+          // Check for duplicate serial numbers
+          if (serialNumbers.has(serialNo)) {
+            reject(new Error(
+              `Duplicate Serial Number found: ${serialNo}. Each student must have a unique Serial Number.`
+            ));
+            return;
+          }
+          serialNumbers.add(serialNo);
+          
+          // Extract Enrollment Number (unique ID for reports)
+          // If enrollment column exists, use it; otherwise auto-generate
+          let enrollmentNumber: string;
+          if (enrollmentColIndex !== -1) {
+            enrollmentNumber = String(row[enrollmentColIndex] || '').trim();
+          } else {
+            // Auto-generate enrollment number if missing (format: ENR-001)
+            enrollmentNumber = `ENR-${String(serialNo).padStart(3, '0')}`;
+          }
           
           // Extract subject marks
           const subjectMarks: Record<string, number> = {};
@@ -146,8 +208,10 @@ export async function importStudentsFromExcel(file: File): Promise<ImportedStude
           }
           
           students.push({
+            serialNo,
+            enrollmentNumber,
             name,
-            rollNumber: rollColIndex !== -1 ? String(row[rollColIndex] || '').trim() : String(i),
+            rollNumber: rollColIndex !== -1 ? String(row[rollColIndex] || '').trim() : '',
             className: classColIndex !== -1 ? String(row[classColIndex] || '').trim() : undefined,
             section: sectionColIndex !== -1 ? String(row[sectionColIndex] || '').trim() : undefined,
             subjectMarks: Object.keys(subjectMarks).length > 0 ? subjectMarks : undefined,
@@ -372,13 +436,20 @@ function findSubjectColumns(headers: string[]): { index: number; name: string }[
 
 /**
  * Converts imported student data to full Student objects
+ * Uses Serial Number as the primary identifier (from Excel)
+ * Enrollment Number is the unique student ID for reports
  */
 export function createStudentsFromImport(
   importedStudents: ImportedStudent[],
   selectedSubjects: string[]
 ): Student[] {
-  return importedStudents.map((imported, index) => {
-    const student = createEmptyStudent(index + 1, selectedSubjects);
+  return importedStudents.map((imported) => {
+    // Create student with imported serial number (not index)
+    const student = createEmptyStudent(imported.serialNo, selectedSubjects);
+    
+    // Set primary identifiers
+    student.serialNo = imported.serialNo; // From Excel (not editable)
+    student.enrollmentNumber = imported.enrollmentNumber; // Unique ID for reports
     
     // Set basic info
     student.name = imported.name;
@@ -423,23 +494,36 @@ export function createStudentsFromImport(
 
 /**
  * Generates a sample Excel template for teachers
+ * Includes Serial Number (primary identifier) and Enrollment Number (unique ID for reports)
  */
 export function generateSampleTemplate(): void {
   const wb = XLSX.utils.book_new();
   
+  // Updated template with Serial Number and Enrollment Number columns
   const sampleData = [
-    ['Student Name', 'Roll No', 'Class', 'Section', 'English', 'Hindi', 'Mathematics', 'Science', 'Social Studies', 'Days Present', 'Total Days', 'Behavior Notes'],
-    ['Aarav Sharma', '1', '5', 'A', 85, 78, 92, 88, 75, 45, 50, 'Very attentive and helpful'],
-    ['Priya Patel', '2', '5', 'A', 90, 85, 78, 82, 88, 48, 50, 'Excellent participation'],
-    ['Rahul Kumar', '3', '5', 'A', 72, 68, 65, 70, 72, 40, 50, 'Needs to be more focused'],
+    ['S.No', 'Enrollment No', 'Student Name', 'Roll No', 'Class', 'Section', 'English', 'Hindi', 'Mathematics', 'Science', 'Social Studies', 'Days Present', 'Total Days', 'Behavior Notes'],
+    [1, 'ENR-001', 'Aarav Sharma', '1', '5', 'A', 85, 78, 92, 88, 75, 45, 50, 'Very attentive and helpful'],
+    [2, 'ENR-002', 'Priya Patel', '2', '5', 'A', 90, 85, 78, 82, 88, 48, 50, 'Excellent participation'],
+    [3, 'ENR-003', 'Rahul Kumar', '3', '5', 'A', 72, 68, 65, 70, 72, 40, 50, 'Needs to be more focused'],
   ];
   
   const ws = XLSX.utils.aoa_to_sheet(sampleData);
   
   ws['!cols'] = [
-    { wch: 20 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
-    { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 14 },
-    { wch: 12 }, { wch: 10 }, { wch: 30 },
+    { wch: 8 },  // S.No
+    { wch: 14 }, // Enrollment No
+    { wch: 20 }, // Student Name
+    { wch: 8 },  // Roll No
+    { wch: 8 },  // Class
+    { wch: 8 },  // Section
+    { wch: 10 }, // English
+    { wch: 10 }, // Hindi
+    { wch: 12 }, // Mathematics
+    { wch: 10 }, // Science
+    { wch: 14 }, // Social Studies
+    { wch: 12 }, // Days Present
+    { wch: 10 }, // Total Days
+    { wch: 30 }, // Behavior Notes
   ];
   
   XLSX.utils.book_append_sheet(wb, ws, 'Student Data');

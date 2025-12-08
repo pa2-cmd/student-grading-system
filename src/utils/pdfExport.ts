@@ -31,8 +31,9 @@ export function exportToPDF(data: AssessmentData): void {
   doc.text(subHeader, pageWidth / 2, 22, { align: 'center' });
   
   // Prepare table data
+  // Note: Enrollment Number is displayed on PDF, Serial Number is only internal
   const headers = [
-    'S.No',
+    'Enrollment No',
     'Roll No',
     'Student Name',
     ...data.selectedSubjects.map(s => s.replace(' Skills', '').replace(' Usage', '')),
@@ -45,7 +46,7 @@ export function exportToPDF(data: AssessmentData): void {
   const tableData = data.students
     .filter(s => s.name.trim())
     .map(student => [
-      student.serialNo,
+      student.enrollmentNumber || `ENR-${String(student.serialNo).padStart(3, '0')}`, // Show Enrollment Number on PDF
       student.rollNumber || '-',
       student.name,
       ...data.selectedSubjects.map(subject => {

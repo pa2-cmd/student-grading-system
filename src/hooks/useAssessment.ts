@@ -330,6 +330,8 @@ function migrateData(parsed: any): AssessmentData {
       return {
         id: student.id || crypto.randomUUID(),
         serialNo: student.serialNo || index + 1,
+        // Migrate enrollmentNumber - generate if missing
+        enrollmentNumber: student.enrollmentNumber || `ENR-${String(student.serialNo || index + 1).padStart(3, '0')}`,
         name: student.name || '',
         rollNumber: student.rollNumber || '',
         photo: student.photo || '',

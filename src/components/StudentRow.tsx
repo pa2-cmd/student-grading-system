@@ -57,8 +57,20 @@ export function StudentRow({
   return (
     <>
       <tr className="animate-fade-in hover:bg-muted/50 transition-colors">
-        {/* Serial Number */}
-        <td className="text-center font-medium">{student.serialNo}</td>
+        {/* Serial Number - Read-only (from Excel) */}
+        <td className="text-center font-medium text-muted-foreground">
+          {student.serialNo}
+        </td>
+        
+        {/* Enrollment Number - Editable */}
+        <td>
+          <Input
+            value={student.enrollmentNumber || ''}
+            onChange={(e) => onUpdate({ enrollmentNumber: e.target.value })}
+            placeholder="ENR-001"
+            className="input-field w-full min-w-[90px] text-center font-mono text-sm"
+          />
+        </td>
         
         {/* Roll Number */}
         <td>
@@ -204,7 +216,7 @@ export function StudentRow({
       {/* Expanded Details Row */}
       {isExpanded && (
         <tr className="bg-muted/30">
-          <td colSpan={selectedSubjects.length + 6} className="p-4">
+          <td colSpan={selectedSubjects.length + 7} className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {/* Attendance */}
               <div className="space-y-2">

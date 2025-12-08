@@ -68,7 +68,8 @@ export const LANGUAGES: { value: Language; label: string; nativeLabel: string }[
 // Student data structure
 export interface Student {
   id: string;
-  serialNo: number;
+  serialNo: number; // Primary identifier from Excel (not editable)
+  enrollmentNumber: string; // Unique student ID for reports (editable)
   name: string;
   rollNumber: string;
   photo?: string; // Base64 or URL
@@ -211,9 +212,13 @@ export function createEmptyStudent(serialNo: number, selectedSubjects: string[])
     learningSkills[skill] = 'Good';
   });
   
+  // Auto-generate enrollment number if not provided (format: ENR-001)
+  const enrollmentNumber = `ENR-${String(serialNo).padStart(3, '0')}`;
+  
   return {
     id: crypto.randomUUID(),
     serialNo,
+    enrollmentNumber,
     name: '',
     rollNumber: '',
     photo: '',
