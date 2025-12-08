@@ -18,6 +18,7 @@ interface ActionButtonsProps {
   onExportPDF: () => void;
   onExportJSON: () => void;
   onImportJSON: (file: File) => void;
+  onImportExcel: (file: File) => void;
   onReset: () => void;
   onGenerateAllRemarks: () => void;
   isGeneratingAll: boolean;
@@ -30,21 +31,35 @@ export function ActionButtons({
   onExportPDF,
   onExportJSON,
   onImportJSON,
+  onImportExcel,
   onReset,
   onGenerateAllRemarks,
   isGeneratingAll,
   studentCount,
 }: ActionButtonsProps) {
   const jsonInputRef = useRef<HTMLInputElement>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
   const handleJSONImportClick = () => {
     jsonInputRef.current?.click();
+  };
+
+  const handleExcelImportClick = () => {
+    excelInputRef.current?.click();
   };
 
   const handleJSONFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       onImportJSON(file);
+      e.target.value = '';
+    }
+  };
+
+  const handleExcelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onImportExcel(file);
       e.target.value = '';
     }
   };
@@ -68,6 +83,16 @@ export function ActionButtons({
           <Sparkles className="h-4 w-4" />
         )}
         Generate All Remarks
+      </Button>
+
+      {/* Import from Excel */}
+      <Button 
+        onClick={handleExcelImportClick} 
+        variant="outline" 
+        className="gap-2 border-accent text-accent hover:bg-accent hover:text-accent-foreground"
+      >
+        <FileUp className="h-4 w-4" />
+        Import Students (Excel)
       </Button>
 
       {/* Export Options */}
@@ -99,12 +124,19 @@ export function ActionButtons({
         Import JSON
       </Button>
 
-      {/* Hidden file input for JSON */}
+      {/* Hidden file inputs */}
       <input
         ref={jsonInputRef}
         type="file"
         accept=".json"
         onChange={handleJSONFileChange}
+        className="hidden"
+      />
+      <input
+        ref={excelInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        onChange={handleExcelFileChange}
         className="hidden"
       />
 

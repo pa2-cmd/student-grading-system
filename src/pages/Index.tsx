@@ -5,12 +5,13 @@ import { ActionButtons } from '@/components/ActionButtons';
 import { AssessmentTable } from '@/components/AssessmentTable';
 import { SubjectSelector } from '@/components/SubjectSelector';
 import { AnalyticsDashboard } from '@/components/AnalyticsDashboard';
-import { StudentImport } from '@/components/StudentImport';
+import { ExcelDropZone } from '@/components/ExcelDropZone';
+import { ExcelPreview } from '@/components/ExcelPreview';
 import { exportToExcel } from '@/utils/excelExport';
 import { exportToPDF } from '@/utils/pdfExport';
-import { StrictImportedStudent } from '@/utils/strictExcelImport';
+import { importStudentsFromExcel, createStudentsFromImport, ExcelImportResult } from '@/utils/excelImport';
 import { generateRemark, generateStrengthsWeaknessesNextSteps } from '@/utils/remarkGenerator';
-import { calculateClassAnalytics, createEmptyStudent } from '@/types/assessment';
+import { calculateClassAnalytics } from '@/types/assessment';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -37,6 +38,7 @@ const Index = () => {
 
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [excelPreview, setExcelPreview] = useState<ExcelImportResult | null>(null);
 
   const handleGenerateRemark = useCallback(async (studentId: string) => {
     const student = data.students.find(s => s.id === studentId);
@@ -113,17 +115,28 @@ const Index = () => {
     toast.success('PDF exported!');
   }, [data]);
 
-  // Handle strict template import
-  const handleStrictImport = useCallback((importedStudents: StrictImportedStudent[]) => {
-    const students = importedStudents.map((imp) => {
-      const student = createEmptyStudent(imp.serialNo, data.selectedSubjects);
-      student.name = imp.studentName;
-      student.enrollmentNumber = imp.enrollmentNo;
-      return student;
-    });
+  const handleImportExcel = useCallback(async (file: File) => {
+    try {
+      toast.info('Reading Excel file...');
+      const result = await importStudentsFromExcel(file);
+      // Show preview instead of immediate import
+      setExcelPreview(result);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to import');
+    }
+  }, []);
+
+  const confirmExcelImport = useCallback(() => {
+    if (!excelPreview) return;
+    
+    const students = createStudentsFromImport(excelPreview.students, data.selectedSubjects);
+    const firstClassName = excelPreview.students.find(s => s.className)?.className;
+    if (firstClassName) updateSchoolInfo('className', firstClassName);
     
     importStudents(students);
-  }, [importStudents, data.selectedSubjects]);
+    toast.success(`Imported ${students.length} students!`);
+    setExcelPreview(null);
+  }, [excelPreview, data.selectedSubjects, importStudents, updateSchoolInfo]);
 
   const confirmReset = useCallback(() => {
     resetAll();
@@ -159,12 +172,22 @@ const Index = () => {
           </TabsList>
 
           <TabsContent value="students" className="space-y-6">
-            {/* Strict Template-Based Import */}
-            <StudentImport 
-              onImportComplete={handleStrictImport}
-              classSection={`${data.className}-${data.section}`.trim()}
-              className="mb-4"
-            />
+            {/* Excel Preview Dialog */}
+            {excelPreview && (
+              <ExcelPreview
+                result={excelPreview}
+                onConfirm={confirmExcelImport}
+                onCancel={() => setExcelPreview(null)}
+              />
+            )}
+
+            {/* Drag & Drop Excel Import Zone */}
+            {!excelPreview && (
+              <ExcelDropZone 
+                onFileSelect={handleImportExcel} 
+                className="mb-4"
+              />
+            )}
 
             <SubjectSelector
               selectedSubjects={data.selectedSubjects}
@@ -177,6 +200,7 @@ const Index = () => {
               onExportPDF={handleExportPDF}
               onExportJSON={exportJSON}
               onImportJSON={(file) => { importJSON(file); toast.success('Imported!'); }}
+              onImportExcel={handleImportExcel}
               onReset={() => setShowResetDialog(true)}
               onGenerateAllRemarks={handleGenerateAllRemarks}
               isGeneratingAll={isGeneratingAll}
