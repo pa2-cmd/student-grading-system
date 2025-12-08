@@ -3,13 +3,17 @@ import {
   AssessmentData, 
   Student, 
   SkillRating, 
+  Language,
+  SavedComment,
   calculateTotal, 
+  calculatePercentage,
   createEmptyStudent, 
   getDefaultAssessmentData,
-  SKILL_VALUES 
+  SKILL_VALUES,
+  getMoodFromPerformance
 } from '@/types/assessment';
 
-const STORAGE_KEY = 'assessment-data';
+const STORAGE_KEY = 'grading-tool-data';
 
 export function useAssessment() {
   const [data, setData] = useState<AssessmentData>(() => {
@@ -17,60 +21,7 @@ export function useAssessment() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        
-        // Ensure selectedSubjects exists for backward compatibility
-        if (!parsed.selectedSubjects) {
-          parsed.selectedSubjects = [
-            'Speaking & Listening Skills',
-            'Writing Skills',
-            'Vocabulary',
-            'Grammar Usage',
-            'Reading Comprehension',
-          ];
-        }
-        
-        // Migrate old student format to new format with subjectRatings
-        if (parsed.students && parsed.students.length > 0) {
-          parsed.students = parsed.students.map((student: any, index: number) => {
-            // If student already has subjectRatings, keep it
-            if (student.subjectRatings) {
-              return {
-                ...student,
-                rollNumber: student.rollNumber || '',
-              };
-            }
-            
-            // Migrate from old format (individual skill properties)
-            const subjectRatings: Record<string, SkillRating> = {};
-            
-            // Map old properties to new subjectRatings
-            if (student.speakingListening) subjectRatings['Speaking & Listening Skills'] = student.speakingListening;
-            if (student.writing) subjectRatings['Writing Skills'] = student.writing;
-            if (student.vocabulary) subjectRatings['Vocabulary'] = student.vocabulary;
-            if (student.grammar) subjectRatings['Grammar Usage'] = student.grammar;
-            if (student.reading) subjectRatings['Reading Comprehension'] = student.reading;
-            
-            // Fill in defaults for any missing subjects
-            parsed.selectedSubjects.forEach((subject: string) => {
-              if (!subjectRatings[subject]) {
-                subjectRatings[subject] = 'Good';
-              }
-            });
-            
-            return {
-              id: student.id || crypto.randomUUID(),
-              serialNo: student.serialNo || index + 1,
-              name: student.name || '',
-              rollNumber: student.rollNumber || '',
-              subjectRatings,
-              total: calculateTotal(subjectRatings),
-              remark: student.remark || '',
-              isGeneratingRemark: false,
-            };
-          });
-        }
-        
-        return parsed;
+        return migrateData(parsed);
       } catch {
         return getDefaultAssessmentData();
       }
@@ -83,29 +34,29 @@ export function useAssessment() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [data]);
 
-  const updateSchoolInfo = useCallback((field: 'schoolName' | 'className' | 'totalStrength', value: string | number) => {
+  const updateSchoolInfo = useCallback((field: string, value: string | number) => {
     setData(prev => ({ ...prev, [field]: value }));
   }, []);
 
-  const toggleLanguage = useCallback(() => {
-    setData(prev => ({
-      ...prev,
-      language: prev.language === 'english' ? 'hindi' : 'english',
-    }));
+  const changeLanguage = useCallback((lang: Language) => {
+    setData(prev => ({ ...prev, language: lang }));
   }, []);
 
   const updateSelectedSubjects = useCallback((subjects: string[]) => {
     setData(prev => {
-      // Update all existing students to have ratings for new subjects
       const updatedStudents = prev.students.map(student => {
         const newRatings: Record<string, SkillRating> = {};
+        const newMarks: Record<string, number> = {};
         subjects.forEach(subject => {
-          newRatings[subject] = student.subjectRatings[subject] || 'Good';
+          newRatings[subject] = student.subjectRatings?.[subject] || 'Good';
+          newMarks[subject] = student.subjectMarks?.[subject] ?? 75;
         });
         return {
           ...student,
           subjectRatings: newRatings,
+          subjectMarks: newMarks,
           total: calculateTotal(newRatings),
+          percentage: calculatePercentage(newMarks),
         };
       });
       
@@ -133,20 +84,58 @@ export function useAssessment() {
     }));
   }, []);
 
-  const updateStudent = useCallback((id: string, field: keyof Student, value: any) => {
+  const updateStudent = useCallback((id: string, updates: Partial<Student>) => {
     setData(prev => ({
       ...prev,
       students: prev.students.map(student => {
         if (student.id !== id) return student;
         
-        const updated = { ...student, [field]: value };
+        const updated = { ...student, ...updates };
         
-        // Recalculate total if subject ratings changed
-        if (field === 'subjectRatings') {
+        // Recalculate derived fields
+        if (updates.subjectRatings) {
           updated.total = calculateTotal(updated.subjectRatings);
+        }
+        if (updates.subjectMarks) {
+          updated.percentage = calculatePercentage(updated.subjectMarks);
+          updated.moodRating = getMoodFromPerformance(updated.percentage);
+        }
+        if (updates.attendancePresent !== undefined || updates.attendanceTotal !== undefined) {
+          updated.attendancePercentage = updated.attendanceTotal > 0 
+            ? Math.round(updated.attendancePresent / updated.attendanceTotal * 100)
+            : 0;
         }
         
         return updated;
+      }),
+    }));
+  }, []);
+
+  const updateSubjectMark = useCallback((studentId: string, subject: string, marks: number) => {
+    setData(prev => ({
+      ...prev,
+      students: prev.students.map(student => {
+        if (student.id !== studentId) return student;
+        
+        const newMarks = { ...student.subjectMarks, [subject]: marks };
+        const newRatings = { ...student.subjectRatings };
+        
+        // Auto-assign rating based on marks
+        if (marks >= 85) newRatings[subject] = 'Excellent';
+        else if (marks >= 70) newRatings[subject] = 'Good';
+        else if (marks >= 50) newRatings[subject] = 'Average';
+        else newRatings[subject] = 'Needs Improvement';
+        
+        const percentage = calculatePercentage(newMarks);
+        
+        return {
+          ...student,
+          subjectMarks: newMarks,
+          subjectRatings: newRatings,
+          total: calculateTotal(newRatings),
+          percentage,
+          moodRating: getMoodFromPerformance(percentage),
+        };
       }),
     }));
   }, []);
@@ -178,10 +167,70 @@ export function useAssessment() {
     }));
   }, []);
 
+  const updateStudentAnalysis = useCallback((id: string, strengths: string[], improvements: string[], nextSteps: string[]) => {
+    setData(prev => ({
+      ...prev,
+      students: prev.students.map(student => 
+        student.id === id 
+          ? { ...student, strengths, improvements, nextSteps }
+          : student
+      ),
+    }));
+  }, []);
+
   const importStudents = useCallback((students: Student[]) => {
     setData(prev => ({
       ...prev,
-      students: students,
+      students,
+      totalStrength: students.length,
+    }));
+  }, []);
+
+  // Comment Library Management
+  const addComment = useCallback((text: string, category: SavedComment['category']) => {
+    setData(prev => ({
+      ...prev,
+      commentLibrary: [
+        ...prev.commentLibrary,
+        {
+          id: crypto.randomUUID(),
+          text,
+          category,
+          usageCount: 0,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    }));
+  }, []);
+
+  const removeComment = useCallback((id: string) => {
+    setData(prev => ({
+      ...prev,
+      commentLibrary: prev.commentLibrary.filter(c => c.id !== id),
+    }));
+  }, []);
+
+  const useComment = useCallback((id: string) => {
+    setData(prev => ({
+      ...prev,
+      commentLibrary: prev.commentLibrary.map(c =>
+        c.id === id ? { ...c, usageCount: c.usageCount + 1 } : c
+      ),
+    }));
+  }, []);
+
+  // Branding & Settings
+  const updateBranding = useCallback((updates: Partial<AssessmentData['branding']>) => {
+    setData(prev => ({
+      ...prev,
+      branding: { ...prev.branding, ...updates },
+    }));
+  }, []);
+
+  const updateReportSettings = useCallback((updates: Partial<AssessmentData['reportSettings']>) => {
+    setData(prev => ({
+      ...prev,
+      reportSettings: { ...prev.reportSettings, ...updates },
     }));
   }, []);
 
@@ -195,7 +244,7 @@ export function useAssessment() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `assessment-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `grading-backup-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }, [data]);
@@ -205,17 +254,7 @@ export function useAssessment() {
     reader.onload = (e) => {
       try {
         const imported = JSON.parse(e.target?.result as string);
-        // Ensure selectedSubjects exists
-        if (!imported.selectedSubjects) {
-          imported.selectedSubjects = [
-            'Speaking & Listening Skills',
-            'Writing Skills',
-            'Vocabulary',
-            'Grammar Usage',
-            'Reading Comprehension',
-          ];
-        }
-        setData(imported);
+        setData(migrateData(imported));
       } catch (error) {
         console.error('Failed to import JSON:', error);
       }
@@ -226,16 +265,97 @@ export function useAssessment() {
   return {
     data,
     updateSchoolInfo,
-    toggleLanguage,
+    changeLanguage,
     updateSelectedSubjects,
     addStudent,
     removeStudent,
     updateStudent,
+    updateSubjectMark,
     updateSubjectRating,
     updateStudentRemark,
+    updateStudentAnalysis,
     importStudents,
+    addComment,
+    removeComment,
+    useComment,
+    updateBranding,
+    updateReportSettings,
     resetAll,
     exportJSON,
     importJSON,
   };
+}
+
+// Migrate old data format to new format
+function migrateData(parsed: any): AssessmentData {
+  const defaults = getDefaultAssessmentData();
+  
+  // Ensure all required fields exist
+  const migrated: AssessmentData = {
+    schoolName: parsed.schoolName || defaults.schoolName,
+    className: parsed.className || '',
+    section: parsed.section || '',
+    academicYear: parsed.academicYear || defaults.academicYear,
+    term: parsed.term || defaults.term,
+    totalStrength: parsed.totalStrength || 0,
+    language: parsed.language || 'english',
+    selectedSubjects: parsed.selectedSubjects || defaults.selectedSubjects,
+    commentLibrary: parsed.commentLibrary || [],
+    branding: { ...defaults.branding, ...parsed.branding },
+    reportSettings: { ...defaults.reportSettings, ...parsed.reportSettings },
+    students: [],
+  };
+  
+  // Migrate students
+  if (parsed.students && Array.isArray(parsed.students)) {
+    migrated.students = parsed.students.map((student: any, index: number) => {
+      const subjectRatings: Record<string, SkillRating> = student.subjectRatings || {};
+      const subjectMarks: Record<string, number> = student.subjectMarks || {};
+      
+      // Handle old format with individual skill properties
+      if (!student.subjectRatings && student.speakingListening) {
+        subjectRatings['Speaking & Listening'] = student.speakingListening;
+        subjectRatings['Writing Skills'] = student.writing;
+        subjectRatings['Vocabulary'] = student.vocabulary;
+        subjectRatings['Grammar'] = student.grammar;
+        subjectRatings['Reading Comprehension'] = student.reading;
+      }
+      
+      // Fill defaults for missing subjects
+      migrated.selectedSubjects.forEach(subject => {
+        if (!subjectRatings[subject]) subjectRatings[subject] = 'Good';
+        if (subjectMarks[subject] === undefined) subjectMarks[subject] = 75;
+      });
+      
+      return {
+        id: student.id || crypto.randomUUID(),
+        serialNo: student.serialNo || index + 1,
+        name: student.name || '',
+        rollNumber: student.rollNumber || '',
+        photo: student.photo || '',
+        subjectMarks,
+        subjectRatings,
+        attendancePresent: student.attendancePresent || 0,
+        attendanceTotal: student.attendanceTotal || 0,
+        attendancePercentage: student.attendancePercentage || 0,
+        behaviorNotes: student.behaviorNotes || '',
+        learningSkills: student.learningSkills || {},
+        moodRating: student.moodRating || 'good',
+        strengths: student.strengths || [],
+        improvements: student.improvements || [],
+        nextSteps: student.nextSteps || [],
+        remark: student.remark || '',
+        teacherNotes: student.teacherNotes || '',
+        isGeneratingRemark: false,
+        total: calculateTotal(subjectRatings),
+        percentage: calculatePercentage(subjectMarks),
+      };
+    });
+  }
+  
+  if (migrated.students.length === 0) {
+    migrated.students = [createEmptyStudent(1, migrated.selectedSubjects)];
+  }
+  
+  return migrated;
 }
