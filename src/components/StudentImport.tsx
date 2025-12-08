@@ -12,17 +12,18 @@ import { toast } from 'sonner';
 
 interface StudentImportProps {
   onImportComplete: (students: StrictImportedStudent[]) => void;
+  classSection?: string;
   className?: string;
 }
 
-export function StudentImport({ onImportComplete, className }: StudentImportProps) {
+export function StudentImport({ onImportComplete, classSection, className }: StudentImportProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [importResult, setImportResult] = useState<StrictExcelImportResult | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const handleDownloadTemplate = () => {
-    downloadStudentTemplate();
+    downloadStudentTemplate(classSection);
     toast.success('Template downloaded! Fill in your student data and upload.');
   };
 

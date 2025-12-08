@@ -162,6 +162,7 @@ const Index = () => {
             {/* Strict Template-Based Import */}
             <StudentImport 
               onImportComplete={handleStrictImport}
+              classSection={`${data.className}-${data.section}`.trim()}
               className="mb-4"
             />
 
