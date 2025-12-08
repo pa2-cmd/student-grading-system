@@ -17,6 +17,7 @@ export function useAssessment() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        
         // Ensure selectedSubjects exists for backward compatibility
         if (!parsed.selectedSubjects) {
           parsed.selectedSubjects = [
@@ -27,6 +28,48 @@ export function useAssessment() {
             'Reading Comprehension',
           ];
         }
+        
+        // Migrate old student format to new format with subjectRatings
+        if (parsed.students && parsed.students.length > 0) {
+          parsed.students = parsed.students.map((student: any, index: number) => {
+            // If student already has subjectRatings, keep it
+            if (student.subjectRatings) {
+              return {
+                ...student,
+                rollNumber: student.rollNumber || '',
+              };
+            }
+            
+            // Migrate from old format (individual skill properties)
+            const subjectRatings: Record<string, SkillRating> = {};
+            
+            // Map old properties to new subjectRatings
+            if (student.speakingListening) subjectRatings['Speaking & Listening Skills'] = student.speakingListening;
+            if (student.writing) subjectRatings['Writing Skills'] = student.writing;
+            if (student.vocabulary) subjectRatings['Vocabulary'] = student.vocabulary;
+            if (student.grammar) subjectRatings['Grammar Usage'] = student.grammar;
+            if (student.reading) subjectRatings['Reading Comprehension'] = student.reading;
+            
+            // Fill in defaults for any missing subjects
+            parsed.selectedSubjects.forEach((subject: string) => {
+              if (!subjectRatings[subject]) {
+                subjectRatings[subject] = 'Good';
+              }
+            });
+            
+            return {
+              id: student.id || crypto.randomUUID(),
+              serialNo: student.serialNo || index + 1,
+              name: student.name || '',
+              rollNumber: student.rollNumber || '',
+              subjectRatings,
+              total: calculateTotal(subjectRatings),
+              remark: student.remark || '',
+              isGeneratingRemark: false,
+            };
+          });
+        }
+        
         return parsed;
       } catch {
         return getDefaultAssessmentData();
