@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { Student, createEmptyStudent, calculatePercentage, getMoodFromPerformance, SKILL_OPTIONS } from '@/types/assessment';
-
+import { standardizeSubjectName } from '@/utils/subjectMapper';
 export interface ImportedStudent {
   serialNo: number;
   enrollmentNumber: string;
@@ -258,7 +258,9 @@ function findSubjectColumns(
     }
     
     if (isSubject) {
-      subjects.push({ index: i, name: header.trim() });
+      // Standardize the subject name for consistent display
+      const standardName = standardizeSubjectName(header.trim());
+      subjects.push({ index: i, name: standardName });
     }
   }
   
