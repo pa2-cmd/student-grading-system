@@ -12,6 +12,9 @@ interface AssessmentTableProps {
   onUpdateSubjectRating: (studentId: string, subject: string, rating: SkillRating) => void;
   onRemoveStudent: (id: string) => void;
   onGenerateRemark: (id: string) => void;
+  schoolName?: string;
+  className?: string;
+  section?: string;
 }
 
 export function AssessmentTable({
@@ -22,6 +25,9 @@ export function AssessmentTable({
   onUpdateSubjectRating,
   onRemoveStudent,
   onGenerateRemark,
+  schoolName = '',
+  className = '',
+  section = '',
 }: AssessmentTableProps) {
   const [showMarks, setShowMarks] = useState(true);
 
@@ -61,7 +67,16 @@ export function AssessmentTable({
             </tr>
           </thead>
           <tbody>
-            {students.map((student) => (
+            {students
+              .map((student, _, arr) => {
+                // Calculate class position based on percentage
+                const sortedByPercentage = [...arr]
+                  .filter(s => s.name.trim())
+                  .sort((a, b) => b.percentage - a.percentage);
+                const position = sortedByPercentage.findIndex(s => s.id === student.id) + 1;
+                return { student, position: position || arr.length };
+              })
+              .map(({ student, position }) => (
               <StudentRow
                 key={student.id}
                 student={student}
@@ -73,6 +88,11 @@ export function AssessmentTable({
                 onRemove={() => onRemoveStudent(student.id)}
                 onGenerateRemark={() => onGenerateRemark(student.id)}
                 canRemove={students.length > 1}
+                schoolName={schoolName}
+                className={className}
+                section={section}
+                totalStudents={students.filter(s => s.name.trim()).length}
+                classPosition={position}
               />
             ))}
           </tbody>

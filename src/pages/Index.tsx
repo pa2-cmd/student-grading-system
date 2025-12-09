@@ -224,6 +224,9 @@ const Index = () => {
               onUpdateSubjectRating={updateSubjectRating}
               onRemoveStudent={removeStudent}
               onGenerateRemark={handleGenerateRemark}
+              schoolName={data.schoolName}
+              className={data.className}
+              section={data.section}
             />
           </TabsContent>
 

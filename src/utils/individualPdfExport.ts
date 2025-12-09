@@ -319,12 +319,12 @@ export async function exportStudentPDF({
   // SAVE FILE
   // ===========================
   
-  // Clean filename
-  const cleanName = student.name.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
-  const cleanClass = (className || 'Class').replace(/[^a-zA-Z0-9]/g, '');
+  // Clean filename - format: <StudentName> - Class <Class><Section> - Report.pdf
+  const cleanName = student.name.trim().replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ');
+  const cleanClass = (className || '').replace(/[^a-zA-Z0-9]/g, '');
   const cleanSection = (section || '').replace(/[^a-zA-Z0-9]/g, '');
   
-  const fileName = `StudentReport_${cleanName}_Class-${cleanClass}${cleanSection ? `_Section-${cleanSection}` : ''}.pdf`;
+  const fileName = `${cleanName} - Class ${cleanClass}${cleanSection} - Report.pdf`;
   
   doc.save(fileName);
 }

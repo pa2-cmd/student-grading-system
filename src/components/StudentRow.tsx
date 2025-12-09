@@ -4,10 +4,11 @@ import { StudentPerformanceChart } from './StudentPerformanceChart';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Trash2, Sparkles, Loader2, Pencil, Check, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Trash2, Sparkles, Loader2, Pencil, Check, X, ChevronDown, ChevronUp, FileDown } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
-
+import { exportStudentPDF } from '@/utils/individualPdfExport';
+import { toast } from 'sonner';
 interface StudentRowProps {
   student: Student;
   selectedSubjects: string[];
@@ -18,6 +19,11 @@ interface StudentRowProps {
   onRemove: () => void;
   onGenerateRemark: () => void;
   canRemove: boolean;
+  schoolName?: string;
+  className?: string;
+  section?: string;
+  totalStudents?: number;
+  classPosition?: number;
 }
 
 export function StudentRow({ 
@@ -29,11 +35,41 @@ export function StudentRow({
   onUpdate, 
   onRemove, 
   onGenerateRemark, 
-  canRemove 
+  canRemove,
+  schoolName = '',
+  className = '',
+  section = '',
+  totalStudents = 1,
+  classPosition = 1,
 }: StudentRowProps) {
   const [isEditingRemark, setIsEditingRemark] = useState(false);
   const [editedRemark, setEditedRemark] = useState(student.remark);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownloadPDF = async () => {
+    if (!student.name.trim()) {
+      toast.error('Please enter student name first');
+      return;
+    }
+    
+    setIsDownloading(true);
+    try {
+      await exportStudentPDF({
+        student: { ...student, classPosition },
+        selectedSubjects,
+        schoolName,
+        className,
+        section,
+        totalStudents,
+      });
+      toast.success(`Report downloaded for ${student.name}`);
+    } catch (error) {
+      toast.error('Failed to generate PDF');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   const maxScore = selectedSubjects.length * 4;
   const percentage = student.percentage || 0;
@@ -192,6 +228,21 @@ export function StudentRow({
         {/* Actions */}
         <td className="text-center">
           <div className="flex items-center justify-center gap-1 flex-wrap">
+            {/* Download Individual Report Button */}
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleDownloadPDF}
+              disabled={isDownloading || !student.name.trim()}
+              className="h-7 w-7 p-0 text-primary hover:text-primary hover:bg-primary/10"
+              title="Download Individual Report"
+            >
+              {isDownloading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileDown className="h-4 w-4" />
+              )}
+            </Button>
             {/* Performance Chart Button */}
             <StudentPerformanceChart 
               student={student} 
