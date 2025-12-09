@@ -1,5 +1,6 @@
 import { Student, SkillRating, SKILL_OPTIONS, MOOD_EMOJIS, LEARNING_SKILLS } from '@/types/assessment';
 import { SkillSelect } from './SkillSelect';
+import { StudentPerformanceChart } from './StudentPerformanceChart';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -127,19 +128,19 @@ export function StudentRow({
           {MOOD_EMOJIS[student.moodRating]}
         </td>
         
-        {/* AI Remarks - Editable */}
-        <td className="min-w-[250px]">
+        {/* AI Remarks - Editable - Wider Column */}
+        <td className="min-w-[350px] max-w-[450px]">
           <div className="flex items-start gap-2">
             <div className="flex-1">
               {isEditingRemark ? (
                 <Textarea
                   value={editedRemark}
                   onChange={(e) => setEditedRemark(e.target.value)}
-                  className="min-h-[60px] text-sm"
+                  className="min-h-[80px] text-sm resize-y"
                   placeholder="Enter remark..."
                 />
               ) : student.remark ? (
-                <p className="text-sm text-foreground leading-relaxed line-clamp-3">{student.remark}</p>
+                <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">{student.remark}</p>
               ) : (
                 <p className="text-sm text-muted-foreground italic">Click ✨ to generate</p>
               )}
@@ -190,7 +191,12 @@ export function StudentRow({
         
         {/* Actions */}
         <td className="text-center">
-          <div className="flex items-center justify-center gap-1">
+          <div className="flex items-center justify-center gap-1 flex-wrap">
+            {/* Performance Chart Button */}
+            <StudentPerformanceChart 
+              student={student} 
+              selectedSubjects={selectedSubjects}
+            />
             <Button
               size="sm"
               variant="ghost"

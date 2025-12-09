@@ -81,6 +81,20 @@ export function ExcelPreview({ result, onConfirm, onCancel }: ExcelPreviewProps)
               </Badge>
             )}
           </div>
+          
+          {/* Detected Subjects */}
+          {result.detectedSubjects && result.detectedSubjects.length > 0 && (
+            <div className="mt-2">
+              <p className="text-xs text-muted-foreground mb-1">Detected Subjects:</p>
+              <div className="flex flex-wrap gap-1">
+                {result.detectedSubjects.map((subject, i) => (
+                  <Badge key={i} variant="secondary" className="text-xs">
+                    {subject}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Warnings */}

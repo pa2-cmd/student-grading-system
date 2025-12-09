@@ -26,6 +26,7 @@ export interface ExcelImportResult {
     name: { index: number; header: string } | null;
     enrollment: { index: number; header: string } | null;
   };
+  detectedSubjects: string[];  // Subjects detected from Excel headers
   warnings: string[];
 }
 
@@ -485,6 +486,7 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
             name: nameCol,
             enrollment: enrollmentCol,
           },
+          detectedSubjects: subjectCols.map(s => s.name),
           warnings,
         });
       } catch (error) {

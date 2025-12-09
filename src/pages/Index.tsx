@@ -11,6 +11,7 @@ import { exportToExcel } from '@/utils/excelExport';
 import { exportToPDF } from '@/utils/pdfExport';
 import { importStudentsFromExcel, createStudentsFromImport, ExcelImportResult } from '@/utils/excelImport';
 import { generateRemark, generateStrengthsWeaknessesNextSteps } from '@/utils/remarkGenerator';
+import { generateHumanizedRemark } from '@/utils/humanizedRemarks';
 import { calculateClassAnalytics } from '@/types/assessment';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -50,15 +51,15 @@ const Index = () => {
     updateStudentRemark(studentId, '', true);
 
     try {
-      const remark = await generateRemark({
-        student,
-        language: data.language,
-        selectedSubjects: data.selectedSubjects,
-      });
+      // Use humanized remarks for better natural-sounding comments
+      const humanizedRemark = generateHumanizedRemark(student, data.language);
       
+      // Also generate detailed analysis
       const analysis = generateStrengthsWeaknessesNextSteps(student, data.language, data.selectedSubjects);
       updateStudentAnalysis(studentId, analysis.strengths, analysis.improvements, analysis.nextSteps);
-      updateStudentRemark(studentId, remark, false);
+      
+      // Set the humanized remark
+      updateStudentRemark(studentId, humanizedRemark, false);
       toast.success('Report generated!');
     } catch (error) {
       updateStudentRemark(studentId, '', false);
@@ -79,18 +80,16 @@ const Index = () => {
     for (const student of studentsWithNames) {
       updateStudentRemark(student.id, '', true);
       try {
-        const remark = await generateRemark({
-          student,
-          language: data.language,
-          selectedSubjects: data.selectedSubjects,
-        });
+        // Use humanized remarks
+        const humanizedRemark = generateHumanizedRemark(student, data.language);
+        
         const analysis = generateStrengthsWeaknessesNextSteps(student, data.language, data.selectedSubjects);
         updateStudentAnalysis(student.id, analysis.strengths, analysis.improvements, analysis.nextSteps);
-        updateStudentRemark(student.id, remark, false);
+        updateStudentRemark(student.id, humanizedRemark, false);
       } catch {
         updateStudentRemark(student.id, '', false);
       }
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 50)); // Faster since no AI call
     }
 
     setIsGeneratingAll(false);
@@ -129,14 +128,24 @@ const Index = () => {
   const confirmExcelImport = useCallback(() => {
     if (!excelPreview) return;
     
-    const students = createStudentsFromImport(excelPreview.students, data.selectedSubjects);
+    // If subjects were detected from Excel, use them
+    const subjectsToUse = excelPreview.detectedSubjects.length > 0 
+      ? excelPreview.detectedSubjects 
+      : data.selectedSubjects;
+    
+    // Update selected subjects if new ones were detected
+    if (excelPreview.detectedSubjects.length > 0) {
+      updateSelectedSubjects(excelPreview.detectedSubjects);
+    }
+    
+    const students = createStudentsFromImport(excelPreview.students, subjectsToUse);
     const firstClassName = excelPreview.students.find(s => s.className)?.className;
     if (firstClassName) updateSchoolInfo('className', firstClassName);
     
     importStudents(students);
-    toast.success(`Imported ${students.length} students!`);
+    toast.success(`Imported ${students.length} students with ${subjectsToUse.length} subjects!`);
     setExcelPreview(null);
-  }, [excelPreview, data.selectedSubjects, importStudents, updateSchoolInfo]);
+  }, [excelPreview, data.selectedSubjects, importStudents, updateSchoolInfo, updateSelectedSubjects]);
 
   const confirmReset = useCallback(() => {
     resetAll();

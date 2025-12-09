@@ -56,8 +56,8 @@ export function AssessmentTable({
               ))}
               <th className="w-24 text-center">Score</th>
               <th className="w-16 text-center">Mood</th>
-              <th className="min-w-[250px]">AI Remarks</th>
-              <th className="w-20 text-center">Actions</th>
+              <th className="min-w-[350px]">AI Remarks</th>
+              <th className="w-28 text-center">Actions</th>
             </tr>
           </thead>
           <tbody>
