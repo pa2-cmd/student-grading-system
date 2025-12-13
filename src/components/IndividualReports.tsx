@@ -38,6 +38,7 @@ interface IndividualReportsProps {
   schoolName: string;
   className: string;
   section: string;
+  term?: string;
 }
 
 export function IndividualReports({ 
@@ -45,7 +46,8 @@ export function IndividualReports({
   selectedSubjects,
   schoolName,
   className,
-  section
+  section,
+  term = 'Term 1'
 }: IndividualReportsProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);

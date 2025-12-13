@@ -1,7 +1,7 @@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { GraduationCap } from 'lucide-react';
-import { Language, LANGUAGES } from '@/types/assessment';
+import { Language, LANGUAGES, Term, CLASS_OPTIONS, SECTION_OPTIONS } from '@/types/assessment';
 import {
   Select,
   SelectContent,
@@ -12,18 +12,21 @@ import {
 
 interface HeaderSectionProps {
   schoolName: string;
+  examName?: string;
   className: string;
   section: string;
   academicYear: string;
-  term: string;
+  term: Term;
   totalStrength: number;
   language: Language;
   onUpdateSchoolInfo: (field: string, value: string | number) => void;
   onChangeLanguage: (lang: Language) => void;
+  onChangeTerm?: (term: Term) => void;
 }
 
 export function HeaderSection({
   schoolName,
+  examName,
   className,
   section,
   academicYear,
@@ -32,6 +35,7 @@ export function HeaderSection({
   language,
   onUpdateSchoolInfo,
   onChangeLanguage,
+  onChangeTerm,
 }: HeaderSectionProps) {
   return (
     <div className="card-elevated mb-6">
@@ -40,12 +44,13 @@ export function HeaderSection({
           <GraduationCap className="h-8 w-8 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">Student Grading Tool</h1>
-          <p className="text-muted-foreground">Generate warm, personalized report cards with AI</p>
+          <h1 className="text-2xl font-heading font-bold text-foreground">Cambridge Court Marksheet</h1>
+          <p className="text-muted-foreground">Consolidated Student Assessment System</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
+        {/* School Name */}
         <div className="space-y-2 lg:col-span-2">
           <Label htmlFor="schoolName" className="text-sm font-medium">School Name</Label>
           <Input
@@ -53,49 +58,82 @@ export function HeaderSection({
             value={schoolName}
             onChange={(e) => onUpdateSchoolInfo('schoolName', e.target.value)}
             className="input-field"
-            placeholder="Enter school name"
+            placeholder="Cambridge Court High School"
           />
         </div>
 
+        {/* Exam Name */}
+        <div className="space-y-2 lg:col-span-2">
+          <Label htmlFor="examName" className="text-sm font-medium">Exam Name</Label>
+          <Input
+            id="examName"
+            value={examName || ''}
+            onChange={(e) => onUpdateSchoolInfo('examName', e.target.value)}
+            className="input-field"
+            placeholder="Half Yearly Examination"
+          />
+        </div>
+
+        {/* Class Dropdown */}
         <div className="space-y-2">
           <Label htmlFor="className" className="text-sm font-medium">Class</Label>
-          <Input
-            id="className"
-            value={className}
-            onChange={(e) => onUpdateSchoolInfo('className', e.target.value)}
-            className="input-field"
-            placeholder="e.g., 5"
-          />
+          <Select 
+            value={className} 
+            onValueChange={(v) => onUpdateSchoolInfo('className', v)}
+          >
+            <SelectTrigger className="input-field">
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent className="bg-popover border border-border z-50">
+              {CLASS_OPTIONS.map(cls => (
+                <SelectItem key={cls} value={cls}>{cls}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
+        {/* Section Dropdown */}
         <div className="space-y-2">
           <Label htmlFor="section" className="text-sm font-medium">Section</Label>
-          <Input
-            id="section"
-            value={section}
-            onChange={(e) => onUpdateSchoolInfo('section', e.target.value)}
-            className="input-field"
-            placeholder="e.g., A"
-          />
+          <Select 
+            value={section} 
+            onValueChange={(v) => onUpdateSchoolInfo('section', v)}
+          >
+            <SelectTrigger className="input-field">
+              <SelectValue placeholder="Select" />
+            </SelectTrigger>
+            <SelectContent className="bg-popover border border-border z-50">
+              {SECTION_OPTIONS.map(sec => (
+                <SelectItem key={sec} value={sec}>{sec}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
+        {/* Term Selection */}
         <div className="space-y-2">
           <Label htmlFor="term" className="text-sm font-medium">Term</Label>
-          <Select value={term} onValueChange={(v) => onUpdateSchoolInfo('term', v)}>
+          <Select 
+            value={term} 
+            onValueChange={(v) => {
+              onUpdateSchoolInfo('term', v);
+              onChangeTerm?.(v as Term);
+            }}
+          >
             <SelectTrigger className="input-field">
               <SelectValue placeholder="Select term" />
             </SelectTrigger>
             <SelectContent className="bg-popover border border-border z-50">
               <SelectItem value="Term 1">Term 1</SelectItem>
               <SelectItem value="Term 2">Term 2</SelectItem>
-              <SelectItem value="Mid-Term">Mid-Term</SelectItem>
               <SelectItem value="Annual">Annual</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
+        {/* Language */}
         <div className="space-y-2">
-          <Label className="text-sm font-medium">Report Language</Label>
+          <Label className="text-sm font-medium">Language</Label>
           <Select value={language} onValueChange={(v) => onChangeLanguage(v as Language)}>
             <SelectTrigger className="input-field">
               <SelectValue />
@@ -103,7 +141,7 @@ export function HeaderSection({
             <SelectContent className="bg-popover border border-border z-50">
               {LANGUAGES.map(lang => (
                 <SelectItem key={lang.value} value={lang.value}>
-                  {lang.nativeLabel} ({lang.label})
+                  {lang.nativeLabel}
                 </SelectItem>
               ))}
             </SelectContent>

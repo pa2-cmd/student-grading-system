@@ -1,16 +1,18 @@
 // ============================================
-// TYPES FOR COMPLETE STUDENT GRADING SYSTEM
+// TYPES FOR CAMBRIDGE COURT MARKSHEET SYSTEM
 // ============================================
 
 export type SkillRating = 'Excellent' | 'Good' | 'Average' | 'Needs Improvement';
 export type SkillValue = 4 | 3 | 2 | 1;
 export type MoodRating = 'excellent' | 'good' | 'neutral' | 'needs-support';
 export type Language = 'english' | 'hindi' | 'marathi' | 'tamil' | 'telugu' | 'bengali' | 'gujarati';
+export type Term = 'Term 1' | 'Term 2' | 'Annual';
 
 // Subject available for selection
 export const DEFAULT_SUBJECTS = [
   'English',
   'Hindi',
+  'Sanskrit',
   'Mathematics',
   'Science',
   'Social Studies',
@@ -18,13 +20,9 @@ export const DEFAULT_SUBJECTS = [
   'Art & Craft',
   'Physical Education',
   'Music',
-  'Speaking & Listening',
-  'Writing Skills',
-  'Vocabulary',
-  'Grammar',
-  'Reading Comprehension',
-  'Environmental Studies',
+  'Moral Science',
   'General Knowledge',
+  'Environmental Studies',
 ] as const;
 
 // Learning skills that can be assessed
@@ -65,18 +63,40 @@ export const LANGUAGES: { value: Language; label: string; nativeLabel: string }[
   { value: 'gujarati', label: 'Gujarati', nativeLabel: 'ગુજરાતી' },
 ];
 
+export const CLASS_OPTIONS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+export const SECTION_OPTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+
+// ============================================
+// SUBJECT MARKS STRUCTURE (Cambridge Court Format)
+// ============================================
+
+// Each subject has Theory (80) + Internal (20) = Total (100)
+export interface SubjectMarksDetail {
+  theory: number;      // Max 80
+  internal: number;    // Max 20
+  total: number;       // Auto-calculated: theory + internal
+}
+
 // Student data structure
 export interface Student {
   id: string;
-  serialNo: number; // Primary identifier from Excel (not editable)
-  enrollmentNumber: string; // Unique student ID for reports (editable)
+  serialNo: number;
+  enrollmentNumber: string;
   name: string;
   rollNumber: string;
-  photo?: string; // Base64 or URL
+  photo?: string;
   
-  // Subject marks (percentage or grade)
-  subjectMarks: Record<string, number>; // 0-100
+  // Subject marks - Cambridge Court format (Theory + Internal + Total)
+  subjectMarks: Record<string, number>; // Simple marks for backward compatibility
+  subjectMarksDetail: Record<string, SubjectMarksDetail>; // Detailed marks (Theory/Internal/Total)
   subjectRatings: Record<string, SkillRating>;
+  
+  // Term-wise data storage
+  termData: Record<Term, {
+    subjectMarksDetail: Record<string, SubjectMarksDetail>;
+    total: number;
+    percentage: number;
+  }>;
   
   // Attendance
   attendancePresent: number;
@@ -93,12 +113,13 @@ export interface Student {
   improvements: string[];
   nextSteps: string[];
   remark: string;
-  teacherNotes: string; // Custom notes from teacher
+  teacherNotes: string;
   
-  // State
+  // State & Rankings
   isGeneratingRemark: boolean;
   total: number;
   percentage: number;
+  classPosition: number;
 }
 
 // Comment library item
@@ -116,8 +137,8 @@ export interface SchoolBranding {
   primaryColor: string;
   secondaryColor: string;
   principalName: string;
-  principalSignature: string; // Base64
-  teacherSignature: string; // Base64
+  principalSignature: string;
+  teacherSignature: string;
   address: string;
   contactNumber: string;
   email: string;
@@ -134,15 +155,17 @@ export interface ReportSettings {
   showSignatures: boolean;
   showStrengthsWeaknesses: boolean;
   showNextSteps: boolean;
+  showSubjectCharts: boolean;
 }
 
 // Main assessment data
 export interface AssessmentData {
   schoolName: string;
+  examName: string;
   className: string;
   section: string;
   academicYear: string;
-  term: string;
+  term: Term;
   totalStrength: number;
   students: Student[];
   language: Language;
@@ -181,6 +204,18 @@ export function calculatePercentage(subjectMarks: Record<string, number>): numbe
   return Math.round(marks.reduce((sum, m) => sum + m, 0) / marks.length);
 }
 
+// Calculate percentage from detailed marks (theory + internal)
+export function calculatePercentageFromDetail(subjectMarksDetail: Record<string, SubjectMarksDetail>): number {
+  const totals = Object.values(subjectMarksDetail).map(d => d.total).filter(t => t !== undefined);
+  if (totals.length === 0) return 0;
+  return Math.round(totals.reduce((sum, t) => sum + t, 0) / totals.length);
+}
+
+// Calculate grand total from detailed marks
+export function calculateGrandTotal(subjectMarksDetail: Record<string, SubjectMarksDetail>): number {
+  return Object.values(subjectMarksDetail).reduce((sum, d) => sum + (d.total || 0), 0);
+}
+
 export function getGradeFromPercentage(percentage: number): string {
   if (percentage >= 90) return 'A+';
   if (percentage >= 80) return 'A';
@@ -198,32 +233,43 @@ export function getMoodFromPerformance(percentage: number): MoodRating {
   return 'needs-support';
 }
 
+export function createEmptySubjectMarksDetail(): SubjectMarksDetail {
+  return { theory: 0, internal: 0, total: 0 };
+}
+
 export function createEmptyStudent(serialNo: number, selectedSubjects: string[]): Student {
   const subjectRatings: Record<string, SkillRating> = {};
   const subjectMarks: Record<string, number> = {};
+  const subjectMarksDetail: Record<string, SubjectMarksDetail> = {};
   const learningSkills: Record<string, SkillRating> = {};
   
   selectedSubjects.forEach(subject => {
     subjectRatings[subject] = 'Good';
-    subjectMarks[subject] = 75;
+    subjectMarks[subject] = 0;
+    subjectMarksDetail[subject] = createEmptySubjectMarksDetail();
   });
   
   LEARNING_SKILLS.forEach(skill => {
     learningSkills[skill] = 'Good';
   });
   
-  // Auto-generate enrollment number if not provided (format: ENR-001)
-  const enrollmentNumber = `ENR-${String(serialNo).padStart(3, '0')}`;
+  const emptyTermData: Record<Term, { subjectMarksDetail: Record<string, SubjectMarksDetail>; total: number; percentage: number }> = {
+    'Term 1': { subjectMarksDetail: { ...subjectMarksDetail }, total: 0, percentage: 0 },
+    'Term 2': { subjectMarksDetail: { ...subjectMarksDetail }, total: 0, percentage: 0 },
+    'Annual': { subjectMarksDetail: { ...subjectMarksDetail }, total: 0, percentage: 0 },
+  };
   
   return {
     id: crypto.randomUUID(),
     serialNo,
-    enrollmentNumber,
+    enrollmentNumber: '',
     name: '',
     rollNumber: '',
     photo: '',
     subjectMarks,
+    subjectMarksDetail,
     subjectRatings,
+    termData: emptyTermData,
     attendancePresent: 0,
     attendanceTotal: 0,
     attendancePercentage: 0,
@@ -236,8 +282,9 @@ export function createEmptyStudent(serialNo: number, selectedSubjects: string[])
     remark: '',
     teacherNotes: '',
     isGeneratingRemark: false,
-    total: selectedSubjects.length * 3,
-    percentage: 75,
+    total: 0,
+    percentage: 0,
+    classPosition: serialNo,
   };
 }
 
@@ -266,10 +313,10 @@ export function getDefaultReportSettings(): ReportSettings {
     showSignatures: true,
     showStrengthsWeaknesses: true,
     showNextSteps: true,
+    showSubjectCharts: true,
   };
 }
 
-// Comment tone options for report generation
 export type CommentTone = 'encouraging' | 'formal' | 'warm' | 'strict' | 'balanced';
 
 export const COMMENT_TONES: { value: CommentTone; label: string; description: string }[] = [
@@ -285,6 +332,7 @@ export function getDefaultAssessmentData(): AssessmentData {
   
   return {
     schoolName: '',
+    examName: '',
     className: '',
     section: '',
     academicYear: `${new Date().getFullYear()}-${(new Date().getFullYear() + 1).toString().slice(-2)}`,
@@ -314,39 +362,38 @@ export function calculateClassAnalytics(students: Student[], selectedSubjects: s
     };
   }
   
-  // Class average
   const classAverage = Math.round(
     validStudents.reduce((sum, s) => sum + s.percentage, 0) / validStudents.length
   );
   
-  // Subject averages
   const subjectAverages: Record<string, number> = {};
   selectedSubjects.forEach(subject => {
-    const marks = validStudents.map(s => s.subjectMarks[subject] || 0);
+    const marks = validStudents.map(s => {
+      // Use detailed marks if available, otherwise fall back to simple marks
+      if (s.subjectMarksDetail?.[subject]) {
+        return s.subjectMarksDetail[subject].total || 0;
+      }
+      return s.subjectMarks[subject] || 0;
+    });
     subjectAverages[subject] = Math.round(marks.reduce((a, b) => a + b, 0) / marks.length);
   });
   
-  // Sort by percentage
   const sorted = [...validStudents].sort((a, b) => b.percentage - a.percentage);
   
-  // Top 5 performers
   const topPerformers = sorted.slice(0, 5).map(s => ({
     name: s.name,
     percentage: s.percentage,
   }));
   
-  // Bottom 5 needing help
   const needsHelp = sorted.slice(-5).reverse().map(s => ({
     name: s.name,
     percentage: s.percentage,
   }));
   
-  // Attendance average
   const attendanceAverage = Math.round(
     validStudents.reduce((sum, s) => sum + s.attendancePercentage, 0) / validStudents.length
   );
   
-  // Grade distribution
   const grades: Record<string, number> = { 'A+': 0, 'A': 0, 'B+': 0, 'B': 0, 'C': 0, 'D': 0, 'F': 0 };
   validStudents.forEach(s => {
     const grade = getGradeFromPercentage(s.percentage);
@@ -361,5 +408,33 @@ export function calculateClassAnalytics(students: Student[], selectedSubjects: s
     needsHelp,
     attendanceAverage,
     gradeDistribution,
+  };
+}
+
+// Recalculate student totals and percentage from detailed marks
+export function recalculateStudentTotals(student: Student, selectedSubjects: string[]): Partial<Student> {
+  const subjectMarksDetail = student.subjectMarksDetail || {};
+  let grandTotal = 0;
+  let subjectCount = 0;
+  
+  // Calculate totals from detail
+  selectedSubjects.forEach(subject => {
+    if (subjectMarksDetail[subject]) {
+      const detail = subjectMarksDetail[subject];
+      const total = (detail.theory || 0) + (detail.internal || 0);
+      subjectMarksDetail[subject] = { ...detail, total };
+      grandTotal += total;
+      subjectCount++;
+    }
+  });
+  
+  const percentage = subjectCount > 0 ? Math.round(grandTotal / subjectCount) : 0;
+  const moodRating = getMoodFromPerformance(percentage);
+  
+  return {
+    subjectMarksDetail,
+    total: grandTotal,
+    percentage,
+    moodRating,
   };
 }
