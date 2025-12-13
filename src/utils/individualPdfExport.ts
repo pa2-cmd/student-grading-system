@@ -6,6 +6,7 @@ interface ExportOptions {
   student: Student & { classPosition: number };
   selectedSubjects: string[];
   schoolName: string;
+  examName?: string;
   className: string;
   section: string;
   term?: Term;
@@ -19,6 +20,7 @@ export async function exportStudentPDF({
   student,
   selectedSubjects,
   schoolName,
+  examName = '',
   className,
   section,
   term = 'Term 1',
@@ -58,9 +60,14 @@ export async function exportStudentPDF({
   centerText(schoolName || 'Student Report Card', yPos);
   yPos += 8;
 
-  // Report Title
+  // Exam Name / Term
   doc.setFontSize(12);
   doc.setTextColor(100, 100, 100);
+  centerText(examName || `${term} - Progress Report`, yPos);
+  yPos += 6;
+
+  // Report Title
+  doc.setFontSize(10);
   centerText('STUDENT PROGRESS REPORT', yPos);
   yPos += 10;
 
@@ -74,16 +81,21 @@ export async function exportStudentPDF({
   doc.setFontSize(11);
   doc.setTextColor(0, 0, 0);
 
+  const attendanceStr = student.attendanceTotal > 0 
+    ? `${student.attendancePresent}/${student.attendanceTotal} (${Math.round((student.attendancePresent / student.attendanceTotal) * 100)}%)`
+    : '-';
+
   const infoRows = [
-    ['Student Name:', student.name, 'Enrollment No:', student.enrollmentNumber],
-    ['Class:', `${className || '-'} - ${section || '-'}`, 'Roll Number:', student.rollNumber || '-'],
-    ['Class Position:', `${student.classPosition} / ${totalStudents}`, 'Grade:', getGradeFromPercentage(student.percentage)],
+    ['Student Name:', student.name, 'Class:', `${className || '-'} - ${section || '-'}`],
+    ['Roll Number:', student.rollNumber || '-', 'Enrollment No:', student.enrollmentNumber || '-'],
+    ['Class Position:', `${student.classPosition} / ${totalStudents}`, 'Attendance:', attendanceStr],
+    ['Grade:', getGradeFromPercentage(student.percentage), 'Term:', term],
   ];
 
   const leftCol = margin;
-  const midLeft = 55;
-  const rightCol = pageWidth / 2 + 10;
-  const midRight = pageWidth / 2 + 60;
+  const midLeft = 50;
+  const rightCol = pageWidth / 2 + 5;
+  const midRight = pageWidth / 2 + 50;
 
   infoRows.forEach(row => {
     doc.setFont('helvetica', 'bold');
@@ -321,12 +333,15 @@ export async function exportStudentPDF({
   // SAVE FILE
   // ===========================
   
-  // Clean filename - format: <StudentName> - Class <Class><Section> - Report.pdf
-  const cleanName = student.name.trim().replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ');
+  // Clean filename - format: {StudentName}_Roll-{Roll}_Enroll-{Enrollment}_Class-{Class}{Section}_Term-{Term}.pdf
+  const cleanName = student.name.trim().replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
+  const cleanRoll = (student.rollNumber || 'NA').replace(/[^a-zA-Z0-9]/g, '');
+  const cleanEnroll = (student.enrollmentNumber || 'NA').replace(/[^a-zA-Z0-9]/g, '');
   const cleanClass = (className || '').replace(/[^a-zA-Z0-9]/g, '');
   const cleanSection = (section || '').replace(/[^a-zA-Z0-9]/g, '');
+  const cleanTerm = term.replace(/\s+/g, '');
   
-  const fileName = `${cleanName} - Class ${cleanClass}${cleanSection} - Report.pdf`;
+  const fileName = `${cleanName}_Roll-${cleanRoll}_Enroll-${cleanEnroll}_Class-${cleanClass}${cleanSection}_${cleanTerm}.pdf`;
   
   doc.save(fileName);
 }

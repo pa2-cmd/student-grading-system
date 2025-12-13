@@ -70,9 +70,10 @@ export function AssessmentTable({
           <thead>
             <tr>
               <th className="w-12 text-center sticky left-0 bg-background z-10">S.No</th>
-              <th className="w-24 text-center">Enrollment</th>
               <th className="w-20 text-center">Roll</th>
+              <th className="w-24 text-center">Enrollment</th>
               <th className="min-w-[150px] sticky left-12 bg-background z-10">Student Name</th>
+              <th className="w-20 text-center">Att.</th>
               {selectedSubjects.map(subject => (
                 <th key={subject} className={`text-center ${showDetailedMarks ? 'min-w-[160px]' : 'min-w-[90px]'}`}>
                   <div className="flex flex-col items-center">
