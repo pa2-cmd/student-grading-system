@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Student, getGradeFromPercentage } from '@/types/assessment';
+import { Student, getGradeFromPercentage, Term } from '@/types/assessment';
 
 interface ExportOptions {
   student: Student & { classPosition: number };
@@ -8,6 +8,7 @@ interface ExportOptions {
   schoolName: string;
   className: string;
   section: string;
+  term?: Term;
   totalStudents: number;
 }
 
@@ -20,6 +21,7 @@ export async function exportStudentPDF({
   schoolName,
   className,
   section,
+  term = 'Term 1',
   totalStudents
 }: ExportOptions): Promise<void> {
   const doc = new jsPDF({

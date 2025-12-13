@@ -4,13 +4,17 @@ import {
   Student, 
   SkillRating, 
   Language,
+  Term,
   SavedComment,
+  SubjectMarksDetail,
   calculateTotal, 
   calculatePercentage,
   createEmptyStudent, 
+  createEmptySubjectMarksDetail,
   getDefaultAssessmentData,
   SKILL_VALUES,
-  getMoodFromPerformance
+  getMoodFromPerformance,
+  recalculateStudentTotals
 } from '@/types/assessment';
 
 const STORAGE_KEY = 'grading-tool-data';
@@ -47,14 +51,17 @@ export function useAssessment() {
       const updatedStudents = prev.students.map(student => {
         const newRatings: Record<string, SkillRating> = {};
         const newMarks: Record<string, number> = {};
+        const newMarksDetail: Record<string, SubjectMarksDetail> = {};
         subjects.forEach(subject => {
           newRatings[subject] = student.subjectRatings?.[subject] || 'Good';
-          newMarks[subject] = student.subjectMarks?.[subject] ?? 75;
+          newMarks[subject] = student.subjectMarks?.[subject] ?? 0;
+          newMarksDetail[subject] = student.subjectMarksDetail?.[subject] || createEmptySubjectMarksDetail();
         });
         return {
           ...student,
           subjectRatings: newRatings,
           subjectMarks: newMarks,
+          subjectMarksDetail: newMarksDetail,
           total: calculateTotal(newRatings),
           percentage: calculatePercentage(newMarks),
         };
@@ -66,6 +73,49 @@ export function useAssessment() {
         students: updatedStudents,
       };
     });
+  }, []);
+
+  // Update subject marks detail (Theory + Internal)
+  const updateSubjectMarksDetail = useCallback((studentId: string, subject: string, marks: SubjectMarksDetail) => {
+    setData(prev => ({
+      ...prev,
+      students: prev.students.map(student => {
+        if (student.id !== studentId) return student;
+        
+        const newMarksDetail = { ...student.subjectMarksDetail, [subject]: marks };
+        const updates = recalculateStudentTotals({ ...student, subjectMarksDetail: newMarksDetail }, prev.selectedSubjects);
+        
+        // Also update simple marks for compatibility
+        const newSimpleMarks = { ...student.subjectMarks, [subject]: marks.total };
+        
+        return {
+          ...student,
+          ...updates,
+          subjectMarks: newSimpleMarks,
+        };
+      }),
+    }));
+  }, []);
+
+  // Switch term and load/save term data
+  const switchTerm = useCallback((newTerm: Term) => {
+    setData(prev => ({
+      ...prev,
+      term: newTerm,
+      students: prev.students.map(student => {
+        // Load term data if it exists
+        const termData = student.termData?.[newTerm];
+        if (termData) {
+          return {
+            ...student,
+            subjectMarksDetail: termData.subjectMarksDetail,
+            total: termData.total,
+            percentage: termData.percentage,
+          };
+        }
+        return student;
+      }),
+    }));
   }, []);
 
   const addStudent = useCallback(() => {
@@ -267,6 +317,8 @@ export function useAssessment() {
     updateSchoolInfo,
     changeLanguage,
     updateSelectedSubjects,
+    updateSubjectMarksDetail,
+    switchTerm,
     addStudent,
     removeStudent,
     updateStudent,
@@ -293,6 +345,7 @@ function migrateData(parsed: any): AssessmentData {
   // Ensure all required fields exist
   const migrated: AssessmentData = {
     schoolName: parsed.schoolName || defaults.schoolName,
+    examName: parsed.examName || '',
     className: parsed.className || '',
     section: parsed.section || '',
     academicYear: parsed.academicYear || defaults.academicYear,
@@ -311,6 +364,7 @@ function migrateData(parsed: any): AssessmentData {
     migrated.students = parsed.students.map((student: any, index: number) => {
       const subjectRatings: Record<string, SkillRating> = student.subjectRatings || {};
       const subjectMarks: Record<string, number> = student.subjectMarks || {};
+      const subjectMarksDetail: Record<string, SubjectMarksDetail> = student.subjectMarksDetail || {};
       
       // Handle old format with individual skill properties
       if (!student.subjectRatings && student.speakingListening) {
@@ -324,19 +378,36 @@ function migrateData(parsed: any): AssessmentData {
       // Fill defaults for missing subjects
       migrated.selectedSubjects.forEach(subject => {
         if (!subjectRatings[subject]) subjectRatings[subject] = 'Good';
-        if (subjectMarks[subject] === undefined) subjectMarks[subject] = 75;
+        if (subjectMarks[subject] === undefined) subjectMarks[subject] = 0;
+        if (!subjectMarksDetail[subject]) {
+          // Migrate from simple marks to detailed marks
+          const marks = subjectMarks[subject] || 0;
+          subjectMarksDetail[subject] = {
+            theory: Math.min(80, Math.round(marks * 0.8)),
+            internal: Math.min(20, Math.round(marks * 0.2)),
+            total: marks
+          };
+        }
       });
+      
+      // Create empty term data
+      const emptyTermData = {
+        'Term 1': { subjectMarksDetail: { ...subjectMarksDetail }, total: 0, percentage: 0 },
+        'Term 2': { subjectMarksDetail: {}, total: 0, percentage: 0 },
+        'Annual': { subjectMarksDetail: {}, total: 0, percentage: 0 },
+      };
       
       return {
         id: student.id || crypto.randomUUID(),
         serialNo: student.serialNo || index + 1,
-        // Migrate enrollmentNumber - generate if missing
-        enrollmentNumber: student.enrollmentNumber || `ENR-${String(student.serialNo || index + 1).padStart(3, '0')}`,
+        enrollmentNumber: student.enrollmentNumber || '',
         name: student.name || '',
         rollNumber: student.rollNumber || '',
         photo: student.photo || '',
         subjectMarks,
+        subjectMarksDetail,
         subjectRatings,
+        termData: student.termData || emptyTermData,
         attendancePresent: student.attendancePresent || 0,
         attendanceTotal: student.attendanceTotal || 0,
         attendancePercentage: student.attendancePercentage || 0,
@@ -351,6 +422,7 @@ function migrateData(parsed: any): AssessmentData {
         isGeneratingRemark: false,
         total: calculateTotal(subjectRatings),
         percentage: calculatePercentage(subjectMarks),
+        classPosition: student.classPosition || index + 1,
       };
     });
   }

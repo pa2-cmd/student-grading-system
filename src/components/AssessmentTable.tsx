@@ -1,4 +1,4 @@
-import { Student, SkillRating } from '@/types/assessment';
+import { Student, SkillRating, SubjectMarksDetail, Term } from '@/types/assessment';
 import { StudentRow } from './StudentRow';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -10,11 +10,13 @@ interface AssessmentTableProps {
   onUpdateStudent: (id: string, updates: Partial<Student>) => void;
   onUpdateSubjectMark: (studentId: string, subject: string, marks: number) => void;
   onUpdateSubjectRating: (studentId: string, subject: string, rating: SkillRating) => void;
+  onUpdateSubjectMarksDetail?: (studentId: string, subject: string, marks: SubjectMarksDetail) => void;
   onRemoveStudent: (id: string) => void;
   onGenerateRemark: (id: string) => void;
   schoolName?: string;
   className?: string;
   section?: string;
+  term?: Term;
 }
 
 export function AssessmentTable({
@@ -23,27 +25,43 @@ export function AssessmentTable({
   onUpdateStudent,
   onUpdateSubjectMark,
   onUpdateSubjectRating,
+  onUpdateSubjectMarksDetail,
   onRemoveStudent,
   onGenerateRemark,
   schoolName = '',
   className = '',
   section = '',
+  term = 'Term 1',
 }: AssessmentTableProps) {
   const [showMarks, setShowMarks] = useState(true);
+  const [showDetailedMarks, setShowDetailedMarks] = useState(false);
 
   return (
     <div className="card-elevated overflow-hidden">
       {/* Table Controls */}
-      <div className="flex items-center justify-between p-4 border-b border-border">
-        <h3 className="font-heading font-semibold">Student Records</h3>
-        <div className="flex items-center gap-2">
-          <Label htmlFor="show-marks" className="text-sm text-muted-foreground">Ratings</Label>
-          <Switch
-            id="show-marks"
-            checked={showMarks}
-            onCheckedChange={setShowMarks}
-          />
-          <Label htmlFor="show-marks" className="text-sm text-muted-foreground">Marks</Label>
+      <div className="flex items-center justify-between p-4 border-b border-border flex-wrap gap-4">
+        <h3 className="font-heading font-semibold">Student Records - {term}</h3>
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="show-marks" className="text-sm text-muted-foreground">Ratings</Label>
+            <Switch
+              id="show-marks"
+              checked={showMarks}
+              onCheckedChange={setShowMarks}
+            />
+            <Label htmlFor="show-marks" className="text-sm text-muted-foreground">Marks</Label>
+          </div>
+          {showMarks && (
+            <div className="flex items-center gap-2">
+              <Label htmlFor="detailed-marks" className="text-sm text-muted-foreground">Simple</Label>
+              <Switch
+                id="detailed-marks"
+                checked={showDetailedMarks}
+                onCheckedChange={setShowDetailedMarks}
+              />
+              <Label htmlFor="detailed-marks" className="text-sm text-muted-foreground">Theory+IA</Label>
+            </div>
+          )}
         </div>
       </div>
 
@@ -51,18 +69,25 @@ export function AssessmentTable({
         <table className="assessment-table">
           <thead>
             <tr>
-              <th className="w-12 text-center">S.No</th>
-              <th className="w-24 text-center">Enrollment No</th>
+              <th className="w-12 text-center sticky left-0 bg-background z-10">S.No</th>
+              <th className="w-24 text-center">Enrollment</th>
               <th className="w-20 text-center">Roll</th>
-              <th className="min-w-[150px]">Student Name</th>
+              <th className="min-w-[150px] sticky left-12 bg-background z-10">Student Name</th>
               {selectedSubjects.map(subject => (
-                <th key={subject} className="min-w-[90px] text-center">
-                  {subject.length > 12 ? subject.substring(0, 10) + '...' : subject}
+                <th key={subject} className={`text-center ${showDetailedMarks ? 'min-w-[160px]' : 'min-w-[90px]'}`}>
+                  <div className="flex flex-col items-center">
+                    <span>{subject.length > 12 ? subject.substring(0, 10) + '...' : subject}</span>
+                    {showDetailedMarks && (
+                      <span className="text-xs text-muted-foreground font-normal">(Th+IA=100)</span>
+                    )}
+                  </div>
                 </th>
               ))}
-              <th className="w-24 text-center">Score</th>
+              <th className="w-24 text-center">Total</th>
+              <th className="w-20 text-center">%</th>
+              <th className="w-16 text-center">Rank</th>
               <th className="w-16 text-center">Mood</th>
-              <th className="min-w-[350px]">AI Remarks</th>
+              <th className="min-w-[400px]">Remarks</th>
               <th className="w-28 text-center">Actions</th>
             </tr>
           </thead>
@@ -82,8 +107,10 @@ export function AssessmentTable({
                 student={student}
                 selectedSubjects={selectedSubjects}
                 showMarks={showMarks}
+                showDetailedMarks={showDetailedMarks}
                 onUpdateSubjectMark={(subject, marks) => onUpdateSubjectMark(student.id, subject, marks)}
                 onUpdateSubjectRating={(subject, rating) => onUpdateSubjectRating(student.id, subject, rating)}
+                onUpdateSubjectMarksDetail={(subject, marks) => onUpdateSubjectMarksDetail?.(student.id, subject, marks)}
                 onUpdate={(updates) => onUpdateStudent(student.id, updates)}
                 onRemove={() => onRemoveStudent(student.id)}
                 onGenerateRemark={() => onGenerateRemark(student.id)}
@@ -91,6 +118,7 @@ export function AssessmentTable({
                 schoolName={schoolName}
                 className={className}
                 section={section}
+                term={term}
                 totalStudents={students.filter(s => s.name.trim()).length}
                 classPosition={position}
               />

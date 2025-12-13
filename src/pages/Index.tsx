@@ -5,18 +5,19 @@ import { ActionButtons } from '@/components/ActionButtons';
 import { AssessmentTable } from '@/components/AssessmentTable';
 import { SubjectSelector } from '@/components/SubjectSelector';
 import { AnalyticsDashboard } from '@/components/AnalyticsDashboard';
+import { IndividualReports } from '@/components/IndividualReports';
 import { ExcelDropZone } from '@/components/ExcelDropZone';
 import { ExcelPreview } from '@/components/ExcelPreview';
 import { exportToExcel } from '@/utils/excelExport';
 import { exportToPDF } from '@/utils/pdfExport';
 import { importStudentsFromExcel, createStudentsFromImport, ExcelImportResult } from '@/utils/excelImport';
-import { generateRemark, generateStrengthsWeaknessesNextSteps } from '@/utils/remarkGenerator';
+import { generateStrengthsWeaknessesNextSteps } from '@/utils/remarkGenerator';
 import { generateHumanizedRemark } from '@/utils/humanizedRemarks';
-import { calculateClassAnalytics } from '@/types/assessment';
+import { calculateClassAnalytics, Term } from '@/types/assessment';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Users, BarChart3 } from 'lucide-react';
+import { Users, BarChart3, UserCheck } from 'lucide-react';
 
 const Index = () => {
   const {
@@ -24,6 +25,8 @@ const Index = () => {
     updateSchoolInfo,
     changeLanguage,
     updateSelectedSubjects,
+    updateSubjectMarksDetail,
+    switchTerm,
     addStudent,
     removeStudent,
     updateStudent,
@@ -89,7 +92,7 @@ const Index = () => {
       } catch {
         updateStudentRemark(student.id, '', false);
       }
-      await new Promise(resolve => setTimeout(resolve, 50)); // Faster since no AI call
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
 
     setIsGeneratingAll(false);
@@ -142,6 +145,10 @@ const Index = () => {
     const firstClassName = excelPreview.students.find(s => s.className)?.className;
     if (firstClassName) updateSchoolInfo('className', firstClassName);
     
+    // Get first section if available
+    const firstSection = excelPreview.students.find(s => s.section)?.section;
+    if (firstSection) updateSchoolInfo('section', firstSection);
+    
     importStudents(students);
     toast.success(`Imported ${students.length} students with ${subjectsToUse.length} subjects!`);
     setExcelPreview(null);
@@ -153,6 +160,11 @@ const Index = () => {
     toast.success('All data reset');
   }, [resetAll]);
 
+  const handleTermChange = useCallback((term: Term) => {
+    switchTerm(term);
+    toast.info(`Switched to ${term}`);
+  }, [switchTerm]);
+
   const analytics = calculateClassAnalytics(data.students, data.selectedSubjects);
 
   return (
@@ -160,6 +172,7 @@ const Index = () => {
       <div className="max-w-[1900px] mx-auto">
         <HeaderSection
           schoolName={data.schoolName}
+          examName={data.examName}
           className={data.className}
           section={data.section}
           academicYear={data.academicYear}
@@ -168,12 +181,16 @@ const Index = () => {
           language={data.language}
           onUpdateSchoolInfo={updateSchoolInfo}
           onChangeLanguage={changeLanguage}
+          onChangeTerm={handleTermChange}
         />
 
         <Tabs defaultValue="students" className="space-y-6">
           <TabsList className="bg-muted">
             <TabsTrigger value="students" className="gap-2">
               <Users className="h-4 w-4" /> Students
+            </TabsTrigger>
+            <TabsTrigger value="individual" className="gap-2">
+              <UserCheck className="h-4 w-4" /> Individual Reports
             </TabsTrigger>
             <TabsTrigger value="analytics" className="gap-2">
               <BarChart3 className="h-4 w-4" /> Analytics
@@ -222,11 +239,24 @@ const Index = () => {
               onUpdateStudent={updateStudent}
               onUpdateSubjectMark={updateSubjectMark}
               onUpdateSubjectRating={updateSubjectRating}
+              onUpdateSubjectMarksDetail={updateSubjectMarksDetail}
               onRemoveStudent={removeStudent}
               onGenerateRemark={handleGenerateRemark}
               schoolName={data.schoolName}
               className={data.className}
               section={data.section}
+              term={data.term}
+            />
+          </TabsContent>
+
+          <TabsContent value="individual">
+            <IndividualReports
+              students={data.students}
+              selectedSubjects={data.selectedSubjects}
+              schoolName={data.schoolName}
+              className={data.className}
+              section={data.section}
+              term={data.term}
             />
           </TabsContent>
 

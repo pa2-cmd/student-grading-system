@@ -1,20 +1,24 @@
-import { Student, SkillRating, SKILL_OPTIONS, MOOD_EMOJIS, LEARNING_SKILLS } from '@/types/assessment';
+import { Student, SkillRating, MOOD_EMOJIS, SubjectMarksDetail, createEmptySubjectMarksDetail, Term, getGradeFromPercentage } from '@/types/assessment';
 import { SkillSelect } from './SkillSelect';
 import { StudentPerformanceChart } from './StudentPerformanceChart';
+import { SubjectMarksInput } from './SubjectMarksInput';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import { Trash2, Sparkles, Loader2, Pencil, Check, X, ChevronDown, ChevronUp, FileDown } from 'lucide-react';
 import { useState } from 'react';
-import { Badge } from '@/components/ui/badge';
 import { exportStudentPDF } from '@/utils/individualPdfExport';
 import { toast } from 'sonner';
+
 interface StudentRowProps {
   student: Student;
   selectedSubjects: string[];
   showMarks: boolean;
+  showDetailedMarks?: boolean;
   onUpdateSubjectMark: (subject: string, marks: number) => void;
   onUpdateSubjectRating: (subject: string, value: SkillRating) => void;
+  onUpdateSubjectMarksDetail?: (subject: string, marks: SubjectMarksDetail) => void;
   onUpdate: (updates: Partial<Student>) => void;
   onRemove: () => void;
   onGenerateRemark: () => void;
@@ -22,6 +26,7 @@ interface StudentRowProps {
   schoolName?: string;
   className?: string;
   section?: string;
+  term?: Term;
   totalStudents?: number;
   classPosition?: number;
 }
@@ -30,8 +35,10 @@ export function StudentRow({
   student, 
   selectedSubjects,
   showMarks,
+  showDetailedMarks = false,
   onUpdateSubjectMark,
   onUpdateSubjectRating,
+  onUpdateSubjectMarksDetail,
   onUpdate, 
   onRemove, 
   onGenerateRemark, 
@@ -39,6 +46,7 @@ export function StudentRow({
   schoolName = '',
   className = '',
   section = '',
+  term = 'Term 1',
   totalStudents = 1,
   classPosition = 1,
 }: StudentRowProps) {
@@ -61,6 +69,7 @@ export function StudentRow({
         schoolName,
         className,
         section,
+        term,
         totalStudents,
       });
       toast.success(`Report downloaded for ${student.name}`);
@@ -71,8 +80,17 @@ export function StudentRow({
     }
   };
 
-  const maxScore = selectedSubjects.length * 4;
-  const percentage = student.percentage || 0;
+  // Calculate grand total from detailed marks
+  const grandTotal = selectedSubjects.reduce((sum, subject) => {
+    const detail = student.subjectMarksDetail?.[subject];
+    if (detail) {
+      return sum + (detail.total || 0);
+    }
+    return sum + (student.subjectMarks?.[subject] || 0);
+  }, 0);
+
+  const maxTotal = selectedSubjects.length * 100;
+  const percentage = maxTotal > 0 ? Math.round((grandTotal / maxTotal) * 100) : 0;
   
   const getPercentageClass = () => {
     if (percentage >= 80) return 'text-skill-good font-bold';
@@ -94,8 +112,8 @@ export function StudentRow({
   return (
     <>
       <tr className="animate-fade-in hover:bg-muted/50 transition-colors">
-        {/* Serial Number - Read-only (from Excel) */}
-        <td className="text-center font-medium text-muted-foreground">
+        {/* Serial Number - Read-only (sticky) */}
+        <td className="text-center font-medium text-muted-foreground sticky left-0 bg-background z-10">
           {student.serialNo}
         </td>
         
@@ -119,8 +137,8 @@ export function StudentRow({
           />
         </td>
         
-        {/* Student Name */}
-        <td>
+        {/* Student Name (sticky) */}
+        <td className="sticky left-12 bg-background z-10">
           <Input
             value={student.name}
             onChange={(e) => onUpdate({ name: e.target.value })}
@@ -133,15 +151,24 @@ export function StudentRow({
         {selectedSubjects.map(subject => (
           <td key={subject}>
             {showMarks ? (
-              <Input
-                type="number"
-                min={0}
-                max={100}
-                value={student.subjectMarks?.[subject] ?? ''}
-                onChange={(e) => onUpdateSubjectMark(subject, parseInt(e.target.value) || 0)}
-                placeholder="0-100"
-                className="input-field w-full min-w-[70px] text-center"
-              />
+              showDetailedMarks ? (
+                <SubjectMarksInput
+                  subject={subject}
+                  marks={student.subjectMarksDetail?.[subject] || createEmptySubjectMarksDetail()}
+                  onUpdateMarks={(marks) => onUpdateSubjectMarksDetail?.(subject, marks)}
+                  compact={true}
+                />
+              ) : (
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={student.subjectMarks?.[subject] ?? ''}
+                  onChange={(e) => onUpdateSubjectMark(subject, parseInt(e.target.value) || 0)}
+                  placeholder="0-100"
+                  className="input-field w-full min-w-[70px] text-center"
+                />
+              )
             ) : (
               <SkillSelect
                 value={student.subjectRatings?.[subject] || 'Good'}
@@ -151,12 +178,23 @@ export function StudentRow({
           </td>
         ))}
         
-        {/* Percentage/Total */}
+        {/* Grand Total */}
+        <td className="text-center font-bold text-lg">
+          <Badge variant="outline" className="text-base">
+            {grandTotal}/{maxTotal}
+          </Badge>
+        </td>
+
+        {/* Percentage */}
         <td className={`text-center text-lg ${getPercentageClass()}`}>
           {percentage}%
-          <span className="text-xs text-muted-foreground ml-1 font-normal">
-            ({student.total}/{maxScore})
-          </span>
+        </td>
+
+        {/* Class Rank */}
+        <td className="text-center">
+          <Badge variant={classPosition <= 3 ? 'default' : 'secondary'} className="text-sm">
+            #{classPosition}
+          </Badge>
         </td>
 
         {/* Mood Emoji */}
@@ -164,16 +202,16 @@ export function StudentRow({
           {MOOD_EMOJIS[student.moodRating]}
         </td>
         
-        {/* AI Remarks - Editable - Wider Column */}
-        <td className="min-w-[350px] max-w-[450px]">
+        {/* Remarks - Wider Column with wrapping */}
+        <td className="min-w-[400px] max-w-[500px]">
           <div className="flex items-start gap-2">
             <div className="flex-1">
               {isEditingRemark ? (
                 <Textarea
                   value={editedRemark}
                   onChange={(e) => setEditedRemark(e.target.value)}
-                  className="min-h-[80px] text-sm resize-y"
-                  placeholder="Enter remark..."
+                  className="min-h-[100px] text-sm resize-y"
+                  placeholder="Enter detailed remark..."
                 />
               ) : student.remark ? (
                 <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">{student.remark}</p>
@@ -199,7 +237,7 @@ export function StudentRow({
                     variant="outline"
                     onClick={onGenerateRemark}
                     disabled={student.isGeneratingRemark || !student.name}
-                    title="Generate AI Remark"
+                    title="Generate Remark"
                     className="h-7 w-7 p-0"
                   >
                     {student.isGeneratingRemark ? (
@@ -235,7 +273,7 @@ export function StudentRow({
               onClick={handleDownloadPDF}
               disabled={isDownloading || !student.name.trim()}
               className="h-7 w-7 p-0 text-primary hover:text-primary hover:bg-primary/10"
-              title="Download Individual Report"
+              title="Download PDF Report"
             >
               {isDownloading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -273,12 +311,12 @@ export function StudentRow({
       {/* Expanded Details Row */}
       {isExpanded && (
         <tr className="bg-muted/30">
-          <td colSpan={selectedSubjects.length + 7} className="p-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <td colSpan={selectedSubjects.length + 10} className="p-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* Attendance */}
               <div className="space-y-2">
                 <h4 className="font-medium text-sm">Attendance</h4>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   <Input
                     type="number"
                     min={0}
@@ -287,7 +325,7 @@ export function StudentRow({
                     placeholder="Present"
                     className="input-field w-20"
                   />
-                  <span className="self-center">/</span>
+                  <span>/</span>
                   <Input
                     type="number"
                     min={0}
@@ -296,14 +334,14 @@ export function StudentRow({
                     placeholder="Total"
                     className="input-field w-20"
                   />
-                  <Badge variant="secondary" className="self-center">
+                  <Badge variant="secondary">
                     {student.attendancePercentage || 0}%
                   </Badge>
                 </div>
               </div>
               
               {/* Teacher Notes */}
-              <div className="space-y-2">
+              <div className="space-y-2 md:col-span-2">
                 <h4 className="font-medium text-sm">Teacher Notes / Behavior</h4>
                 <Textarea
                   value={student.teacherNotes || ''}
@@ -324,7 +362,7 @@ export function StudentRow({
                   </div>
                 )}
                 {student.improvements?.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
+                  <div className="flex flex-wrap gap-1 mt-2">
                     {student.improvements.map((s, i) => (
                       <Badge key={i} className="bg-skill-needs-bg text-skill-needs text-xs">{s}</Badge>
                     ))}
