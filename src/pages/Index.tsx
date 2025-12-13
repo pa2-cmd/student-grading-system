@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useAssessment } from '@/hooks/useAssessment';
 import { HeaderSection } from '@/components/HeaderSection';
 import { ActionButtons } from '@/components/ActionButtons';
@@ -6,7 +6,8 @@ import { AssessmentTable } from '@/components/AssessmentTable';
 import { SubjectSelector } from '@/components/SubjectSelector';
 import { AnalyticsDashboard } from '@/components/AnalyticsDashboard';
 import { IndividualReports } from '@/components/IndividualReports';
-import { ExcelDropZone } from '@/components/ExcelDropZone';
+import { DataSourceGate } from '@/components/DataSourceGate';
+import { DataValidationWarnings } from '@/components/DataValidationWarnings';
 import { ExcelPreview } from '@/components/ExcelPreview';
 import { exportToExcel } from '@/utils/excelExport';
 import { exportToPDF } from '@/utils/pdfExport';
@@ -17,7 +18,8 @@ import { calculateClassAnalytics, Term } from '@/types/assessment';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Users, BarChart3, UserCheck } from 'lucide-react';
+import { Users, BarChart3, UserCheck, XCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 const Index = () => {
   const {
@@ -43,6 +45,12 @@ const Index = () => {
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [excelPreview, setExcelPreview] = useState<ExcelImportResult | null>(null);
+  const [dataSourceConnected, setDataSourceConnected] = useState(false);
+
+  // Check if data source is connected (has students with names)
+  const hasValidData = useMemo(() => {
+    return data.students.some(s => s.name && s.name.trim() !== '');
+  }, [data.students]);
 
   const handleGenerateRemark = useCallback(async (studentId: string) => {
     const student = data.students.find(s => s.id === studentId);
@@ -123,6 +131,15 @@ const Index = () => {
       const result = await importStudentsFromExcel(file);
       // Show preview instead of immediate import
       setExcelPreview(result);
+      
+      // Show warnings if any
+      if (result.warnings.length > 0) {
+        result.warnings.forEach(warning => {
+          if (warning.includes('⚠️')) {
+            toast.warning(warning.replace('⚠️ ', ''));
+          }
+        });
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to import');
     }
@@ -150,12 +167,22 @@ const Index = () => {
     if (firstSection) updateSchoolInfo('section', firstSection);
     
     importStudents(students);
+    setDataSourceConnected(true);
     toast.success(`Imported ${students.length} students with ${subjectsToUse.length} subjects!`);
     setExcelPreview(null);
   }, [excelPreview, data.selectedSubjects, importStudents, updateSchoolInfo, updateSelectedSubjects]);
 
+  const handleGoogleSheetsLink = useCallback((link: string) => {
+    toast.info('Google Sheets integration coming soon. Please use Excel export from Google Sheets for now.');
+  }, []);
+
+  const handleDisconnectDataSource = useCallback(() => {
+    setShowResetDialog(true);
+  }, []);
+
   const confirmReset = useCallback(() => {
     resetAll();
+    setDataSourceConnected(false);
     setShowResetDialog(false);
     toast.success('All data reset');
   }, [resetAll]);
@@ -167,27 +194,66 @@ const Index = () => {
 
   const analytics = calculateClassAnalytics(data.students, data.selectedSubjects);
 
+  // Show data source gate if no data is connected
+  if (!dataSourceConnected && !hasValidData) {
+    return (
+      <>
+        <DataSourceGate 
+          onFileSelect={handleImportExcel}
+          onGoogleSheetsLink={handleGoogleSheetsLink}
+        />
+        
+        {/* Excel Preview Dialog */}
+        {excelPreview && (
+          <ExcelPreview
+            result={excelPreview}
+            onConfirm={confirmExcelImport}
+            onCancel={() => setExcelPreview(null)}
+          />
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background py-6 px-4 sm:px-6 lg:px-8">
       <div className="max-w-[1900px] mx-auto">
-        <HeaderSection
-          schoolName={data.schoolName}
-          examName={data.examName}
-          className={data.className}
-          section={data.section}
-          academicYear={data.academicYear}
-          term={data.term}
-          totalStrength={data.totalStrength}
-          language={data.language}
-          onUpdateSchoolInfo={updateSchoolInfo}
-          onChangeLanguage={changeLanguage}
-          onChangeTerm={handleTermChange}
+        <div className="flex items-center justify-between mb-4">
+          <HeaderSection
+            schoolName={data.schoolName}
+            examName={data.examName}
+            className={data.className}
+            section={data.section}
+            academicYear={data.academicYear}
+            term={data.term}
+            totalStrength={data.totalStrength}
+            language={data.language}
+            onUpdateSchoolInfo={updateSchoolInfo}
+            onChangeLanguage={changeLanguage}
+            onChangeTerm={handleTermChange}
+          />
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDisconnectDataSource}
+            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+          >
+            <XCircle className="h-4 w-4 mr-2" />
+            Reset Data
+          </Button>
+        </div>
+
+        {/* Data Validation Warnings */}
+        <DataValidationWarnings 
+          students={data.students} 
+          className="mb-4"
         />
 
         <Tabs defaultValue="students" className="space-y-6">
           <TabsList className="bg-muted">
             <TabsTrigger value="students" className="gap-2">
-              <Users className="h-4 w-4" /> Students
+              <Users className="h-4 w-4" /> Students ({data.students.filter(s => s.name.trim()).length})
             </TabsTrigger>
             <TabsTrigger value="individual" className="gap-2">
               <UserCheck className="h-4 w-4" /> Individual Reports
@@ -204,14 +270,6 @@ const Index = () => {
                 result={excelPreview}
                 onConfirm={confirmExcelImport}
                 onCancel={() => setExcelPreview(null)}
-              />
-            )}
-
-            {/* Drag & Drop Excel Import Zone */}
-            {!excelPreview && (
-              <ExcelDropZone 
-                onFileSelect={handleImportExcel} 
-                className="mb-4"
               />
             )}
 
@@ -266,7 +324,7 @@ const Index = () => {
         </Tabs>
 
         <div className="mt-6 text-center text-sm text-muted-foreground">
-          <p>Data auto-saves to browser. Import students from Excel to auto-populate.</p>
+          <p>Data auto-saves to browser. Use "Reset Data" to clear and upload a new file.</p>
         </div>
       </div>
 
@@ -275,7 +333,7 @@ const Index = () => {
           <AlertDialogHeader>
             <AlertDialogTitle>Reset All Data?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will delete all students, remarks, and settings permanently.
+              This will delete all students, remarks, and settings permanently. You will need to upload a new Excel file to continue.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

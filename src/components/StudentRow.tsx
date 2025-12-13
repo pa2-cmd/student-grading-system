@@ -117,23 +117,23 @@ export function StudentRow({
           {student.serialNo}
         </td>
         
-        {/* Enrollment Number - Editable */}
+        {/* Roll Number - Separate from Enrollment */}
+        <td>
+          <Input
+            value={student.rollNumber || ''}
+            onChange={(e) => onUpdate({ rollNumber: e.target.value })}
+            placeholder="Roll"
+            className="input-field w-full min-w-[60px] text-center font-mono text-sm"
+          />
+        </td>
+        
+        {/* Enrollment Number - Separate from Roll */}
         <td>
           <Input
             value={student.enrollmentNumber || ''}
             onChange={(e) => onUpdate({ enrollmentNumber: e.target.value })}
-            placeholder="ENR-001"
+            placeholder="Enroll No"
             className="input-field w-full min-w-[90px] text-center font-mono text-sm"
-          />
-        </td>
-        
-        {/* Roll Number */}
-        <td>
-          <Input
-            value={student.rollNumber}
-            onChange={(e) => onUpdate({ rollNumber: e.target.value })}
-            placeholder="Roll"
-            className="input-field w-full min-w-[60px] text-center"
           />
         </td>
         
@@ -145,6 +145,17 @@ export function StudentRow({
             placeholder="Enter student name"
             className="input-field w-full min-w-[140px]"
           />
+        </td>
+        
+        {/* Attendance */}
+        <td className="text-center">
+          {student.attendanceTotal > 0 ? (
+            <Badge variant="outline" className="text-xs font-mono">
+              {student.attendancePresent}/{student.attendanceTotal}
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">-</span>
+          )}
         </td>
         
         {/* Subject Marks/Ratings */}
