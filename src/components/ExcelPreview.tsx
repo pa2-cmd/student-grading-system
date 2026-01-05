@@ -112,18 +112,26 @@ export function ExcelPreview({ result, onConfirm, onCancel }: ExcelPreviewProps)
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-muted">
-                <th className="px-3 py-2 text-left font-medium">S.No</th>
-                <th className="px-3 py-2 text-left font-medium">Student Name</th>
+                <th className="px-3 py-2 text-left font-medium">Roll No</th>
                 <th className="px-3 py-2 text-left font-medium">Enrollment No</th>
+                <th className="px-3 py-2 text-left font-medium">Student Name</th>
+                <th className="px-3 py-2 text-left font-medium">Attendance</th>
                 <th className="px-3 py-2 text-left font-medium">Subjects</th>
               </tr>
             </thead>
             <tbody>
               {previewStudents.map((student, idx) => (
                 <tr key={idx} className="border-t border-border">
-                  <td className="px-3 py-2 font-mono">{student.serialNo}</td>
-                  <td className="px-3 py-2">{student.name}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{student.enrollmentNumber}</td>
+                  <td className="px-3 py-2 font-mono">{student.rollNumber || student.serialNo}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{student.enrollmentNumber || '—'}</td>
+                  <td className="px-3 py-2">{student.name || '—'}</td>
+                  <td className="px-3 py-2 text-xs">
+                    {student.attendancePresent && student.attendanceTotal 
+                      ? `${student.attendancePresent}/${student.attendanceTotal}`
+                      : student.attendancePercentage 
+                        ? `${student.attendancePercentage}%` 
+                        : '—'}
+                  </td>
                   <td className="px-3 py-2">
                     {student.subjectMarks && Object.keys(student.subjectMarks).length > 0 ? (
                       <span className="text-xs text-muted-foreground">

@@ -123,18 +123,27 @@ export async function exportStudentPDF({
   doc.text('Subject-wise Performance', margin, yPos);
   yPos += 7;
 
-  // Calculate totals
-  const totalMarks = selectedSubjects.reduce((sum, subj) => sum + (student.subjectMarks?.[subj] || 0), 0);
-  const maxMarks = selectedSubjects.length * 100;
+  // Calculate totals - only count subjects with actual marks
+  let totalMarks = 0;
+  let maxMarks = 0;
+  let subjectsWithMarks = 0;
 
-  // Prepare table data
+  // Prepare table data - preserve subject order from selectedSubjects
   const tableBody = selectedSubjects.map((subject, index) => {
-    const marks = student.subjectMarks?.[subject] || 0;
-    const grade = getGradeFromPercentage(marks);
+    const marks = student.subjectMarks?.[subject];
+    const hasMarks = marks !== undefined && marks !== null && marks > 0;
+    
+    if (hasMarks) {
+      totalMarks += marks;
+      maxMarks += 100;
+      subjectsWithMarks++;
+    }
+    
+    const grade = hasMarks ? getGradeFromPercentage(marks) : '-';
     return [
       (index + 1).toString(),
       subject,
-      marks.toString(),
+      hasMarks ? marks.toString() : '-', // Display blank as '-' not zero
       '100',
       grade
     ];
@@ -144,9 +153,9 @@ export async function exportStudentPDF({
   tableBody.push([
     '',
     'TOTAL',
-    totalMarks.toString(),
-    maxMarks.toString(),
-    getGradeFromPercentage(student.percentage)
+    subjectsWithMarks > 0 ? totalMarks.toString() : '-',
+    subjectsWithMarks > 0 ? maxMarks.toString() : '-',
+    subjectsWithMarks > 0 ? getGradeFromPercentage(student.percentage) : '-'
   ]);
 
   autoTable(doc, {
