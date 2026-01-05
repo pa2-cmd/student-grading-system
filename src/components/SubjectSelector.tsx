@@ -102,11 +102,13 @@ export function SubjectSelector({ selectedSubjects, onUpdateSubjects }: SubjectS
               <SelectValue placeholder="Select a subject to add..." />
             </SelectTrigger>
             <SelectContent className="bg-popover border border-border z-50">
-              {availableSubjects.map(subject => (
-                <SelectItem key={subject} value={subject}>
-                  {subject}
-                </SelectItem>
-              ))}
+              {availableSubjects
+                .filter(subject => subject && subject.trim() !== '')
+                .map(subject => (
+                  <SelectItem key={subject} value={subject}>
+                    {subject}
+                  </SelectItem>
+                ))}
             </SelectContent>
           </Select>
           <Button

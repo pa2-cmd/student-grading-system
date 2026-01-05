@@ -25,18 +25,25 @@ export function SubjectDropdown({
     subject => !usedSubjects.includes(subject) || subject === value
   );
 
+  // Filter out any empty or invalid values
+  const validSubjects = availableSubjects.filter(s => s && s.trim() !== '');
+
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
+    <Select 
+      value={value || undefined} 
+      onValueChange={onChange} 
+      disabled={disabled}
+    >
       <SelectTrigger className="w-full min-w-[120px]">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent className="bg-popover border border-border z-50 max-h-[200px]">
-        {availableSubjects.length === 0 ? (
+        {validSubjects.length === 0 ? (
           <div className="px-2 py-1.5 text-sm text-muted-foreground">
             No subjects available
           </div>
         ) : (
-          availableSubjects.map((subject) => (
+          validSubjects.map((subject) => (
             <SelectItem key={subject} value={subject}>
               {subject}
             </SelectItem>

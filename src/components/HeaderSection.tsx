@@ -78,14 +78,14 @@ export function HeaderSection({
         <div className="space-y-2">
           <Label htmlFor="className" className="text-sm font-medium">Class</Label>
           <Select 
-            value={className} 
+            value={className || undefined} 
             onValueChange={(v) => onUpdateSchoolInfo('className', v)}
           >
             <SelectTrigger className="input-field">
               <SelectValue placeholder="Select" />
             </SelectTrigger>
             <SelectContent className="bg-popover border border-border z-50">
-              {CLASS_OPTIONS.map(cls => (
+              {CLASS_OPTIONS.filter(cls => cls && cls.trim() !== '').map(cls => (
                 <SelectItem key={cls} value={cls}>{cls}</SelectItem>
               ))}
             </SelectContent>
@@ -96,14 +96,14 @@ export function HeaderSection({
         <div className="space-y-2">
           <Label htmlFor="section" className="text-sm font-medium">Section</Label>
           <Select 
-            value={section} 
+            value={section || undefined} 
             onValueChange={(v) => onUpdateSchoolInfo('section', v)}
           >
             <SelectTrigger className="input-field">
               <SelectValue placeholder="Select" />
             </SelectTrigger>
             <SelectContent className="bg-popover border border-border z-50">
-              {SECTION_OPTIONS.map(sec => (
+              {SECTION_OPTIONS.filter(sec => sec && sec.trim() !== '').map(sec => (
                 <SelectItem key={sec} value={sec}>{sec}</SelectItem>
               ))}
             </SelectContent>
@@ -134,12 +134,12 @@ export function HeaderSection({
         {/* Language */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">Language</Label>
-          <Select value={language} onValueChange={(v) => onChangeLanguage(v as Language)}>
+          <Select value={language || undefined} onValueChange={(v) => onChangeLanguage(v as Language)}>
             <SelectTrigger className="input-field">
-              <SelectValue />
+              <SelectValue placeholder="Select language" />
             </SelectTrigger>
             <SelectContent className="bg-popover border border-border z-50">
-              {LANGUAGES.map(lang => (
+              {LANGUAGES.filter(lang => lang.value && lang.value.trim() !== '').map(lang => (
                 <SelectItem key={lang.value} value={lang.value}>
                   {lang.nativeLabel}
                 </SelectItem>

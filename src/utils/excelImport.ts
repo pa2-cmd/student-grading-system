@@ -1,17 +1,30 @@
 import * as XLSX from 'xlsx';
-import { Student, createEmptyStudent, calculatePercentage, getMoodFromPerformance, SKILL_OPTIONS } from '@/types/assessment';
+import { Student, createEmptyStudent, calculatePercentage, getMoodFromPerformance, SKILL_OPTIONS, SubjectMarksDetail, createEmptySubjectMarksDetail } from '@/types/assessment';
 import { standardizeSubjectName } from '@/utils/subjectMapper';
+
 export interface ImportedStudent {
   serialNo: number;
   enrollmentNumber: string;
   name: string;
   rollNumber: string;
+  fatherName?: string;
+  motherName?: string;
+  dob?: string;
+  gender?: string;
   className?: string;
   section?: string;
+  // Subject marks in grouped format (Theory, Oral/Internal, Total)
+  subjectMarksDetail?: Record<string, { theory: number; oral: number; total: number }>;
+  // Simple subject marks (backward compatibility)
   subjectMarks?: Record<string, number>;
   attendancePresent?: number;
   attendanceTotal?: number;
-  behaviorNotes?: string;
+  attendancePercentage?: number;
+  grandTotal?: number;
+  maxGrandTotal?: number;
+  percentageMarks?: number;
+  grade?: string;
+  remarks?: string;
 }
 
 export interface ExcelImportResult {
@@ -26,9 +39,18 @@ export interface ExcelImportResult {
     name: { index: number; header: string } | null;
     enrollment: { index: number; header: string } | null;
     rollNumber: { index: number; header: string } | null;
+    fatherName: { index: number; header: string } | null;
+    motherName: { index: number; header: string } | null;
+    dob: { index: number; header: string } | null;
+    gender: { index: number; header: string } | null;
     attendance: { present: { index: number; header: string } | null; total: { index: number; header: string } | null; percentage: { index: number; header: string } | null };
+    grandTotal: { index: number; header: string } | null;
+    percentage: { index: number; header: string } | null;
+    grade: { index: number; header: string } | null;
+    remarks: { index: number; header: string } | null;
   };
   detectedSubjects: string[];
+  detectedSubjectGroups: { name: string; theoryCol?: number; oralCol?: number; totalCol?: number }[];
   warnings: string[];
   validationIssues: {
     identicalRollEnrollment: number;
@@ -40,99 +62,111 @@ export interface ExcelImportResult {
 
 /**
  * =============================================================
- * ROBUST EXCEL IMPORT ENGINE
+ * CAMBRIDGE COURT MARKSHEET EXCEL IMPORT ENGINE
  * =============================================================
  * 
- * Features:
- * - Scans first 20 rows to find the header row
- * - Handles messy files with title rows, blank rows, merged cells
- * - Case-insensitive header matching
- * - Auto-generates S.No if missing, but never auto-generates names/enrollment
+ * Matches the exact format of Cambridge Court High School marksheets:
+ * - Sr. No. derived from row number
+ * - Enrollment No. as separate identity
+ * - Subject groups: Theory (80), Oral/Internal (20), Total (100)
+ * - Attendance in "96 / 102" format
  */
 
-/**
- * Normalize a header string for comparison
- */
 function normalizeHeader(header: string): string {
-  return String(header || '').toLowerCase().trim().replace(/\s+/g, ' ').replace(/[.\-_]/g, '');
+  return String(header || '').toLowerCase().trim().replace(/\s+/g, ' ').replace(/[.\-_]/g, '').replace(/<br\/?>/gi, ' ');
 }
 
 // =============================================================
-// HEADER PATTERNS
+// HEADER PATTERNS - Cambridge Court Format
 // =============================================================
 
 const SERIAL_PATTERNS = [
-  's.no', 'sno', 's no', 'sr no', 'sr.no', 'srno', 'sr. no',
-  'serial', 'serial no', 'serial number', 'sl no', 'sl.no', 'slno',
-  's. no', 's.no.', 'sr.no.', 'sl. no', 'sr', 'sl'
+  'sr no', 'sr. no', 'sr.no', 'srno', 's.no', 'sno', 's no', 's. no',
+  'serial', 'serial no', 'serial number', 'sl no', 'sl.no', 'slno'
 ];
 
 const NAME_PATTERNS = [
-  'student name', 'studentname', 'name', 'student', 'full name',
+  'name', 'student name', 'studentname', 'student', 'full name',
   "student's name", 'child name', 'learner name', 'pupil name',
   'scholar name', 'candidate name', 'name of student'
 ];
 
 const ENROLLMENT_PATTERNS = [
   'enrollment no', 'enrollment number', 'enrollment', 'enroll no',
-  'enrolment no', 'enrolment number', 'enrolment', 
+  'enrolment no', 'enrolment number', 'enrolment',
   'er no', 'er.no', 'er. no', 'erno',
-  'adm no', 'adm.no', 'adm. no', 'admission no', 'admission number', 'admission',
+  'adm no', 'adm.no', 'adm. no', 'admission no', 'admission number',
   'student id', 'id no', 'id number',
   'reg no', 'registration no', 'registration number',
   'uid', 'unique id', 'en.no', 'en no', 'enno'
 ];
 
-const ROLL_PATTERNS = [
-  'roll', 'roll no', 'roll number', 'rollno', 'roll no.'
+const FATHER_NAME_PATTERNS = [
+  'father name', 'father', "father's name", 'f/name', 'fname'
 ];
 
-const CLASS_PATTERNS = [
-  'class', 'grade', 'standard', 'std', 'form', 'year', 'level'
+const MOTHER_NAME_PATTERNS = [
+  'mother name', 'mother', "mother's name", 'm/name', 'mname'
 ];
 
-const SECTION_PATTERNS = [
-  'section', 'div', 'division', 'sec', 'stream', 'batch'
+const DOB_PATTERNS = [
+  'dob', 'd.o.b', 'date of birth', 'birth date', 'birthdate'
 ];
 
-const ATTENDANCE_PRESENT_PATTERNS = [
-  'present', 'days present', 'attendance present', 'present days', 'attended',
-  'days attended', 'present days', 'no of days present', 'no. of days present'
+const GENDER_PATTERNS = [
+  'gender', 'sex', 'm/f'
 ];
 
-const ATTENDANCE_TOTAL_PATTERNS = [
-  'total days', 'working days', 'attendance total', 'school days',
-  'total working days', 'no of working days', 'no. of working days'
+const ATTENDANCE_COMBINED_PATTERNS = [
+  'attendance', 'att', 'present/total'
 ];
 
-const ATTENDANCE_PERCENTAGE_PATTERNS = [
-  'attendance', 'attendance %', 'attendance percentage', 'att %', 'att%',
-  'attendance(%)', 'att.', 'att'
+const GRAND_TOTAL_PATTERNS = [
+  'grand total obtained', 'grand total', 'total obtained', 'total marks',
+  'obtained marks', 'marks obtained'
 ];
 
-const BEHAVIOR_PATTERNS = [
-  'behavior', 'behaviour', 'notes', 'remarks', 'teacher notes', 'comment',
-  'comments', 'observation', 'observations'
+const MAX_GRAND_TOTAL_PATTERNS = [
+  'max grand total', 'max total', 'maximum marks', 'max marks'
 ];
 
-const KNOWN_SUBJECTS = [
-  'english', 'hindi', 'mathematics', 'maths', 'math', 'science', 'social studies',
-  'social science', 'sst', 'computer', 'computer science', 'cs', 'art', 'craft',
-  'art & craft', 'physical education', 'pe', 'music', 'drawing', 'gk', 
-  'general knowledge', 'evs', 'environmental studies', 'sanskrit', 'urdu',
-  'french', 'german', 'physics', 'chemistry', 'biology', 'economics', 'history',
-  'geography', 'civics', 'accountancy', 'business studies', 'commerce'
+const PERCENTAGE_PATTERNS = [
+  '% marks', 'percentage', '%', 'percent', 'perc'
 ];
 
-/**
- * Check if a normalized header matches any pattern
- */
+const GRADE_PATTERNS = [
+  'grade', 'overall grade', 'final grade'
+];
+
+const REMARKS_PATTERNS = [
+  'remarks', 'remark', 'comment', 'comments', 'observation', 'teacher remarks'
+];
+
+// Cambridge Court subject patterns - detect Theory/Oral/Total groups
+const SUBJECT_ABBREVIATIONS: Record<string, string> = {
+  'mths': 'Mathematics',
+  'eng': 'English',
+  'hin': 'Hindi',
+  'sc': 'Science',
+  'ssc': 'Social Studies',
+  'sans': 'Sanskrit',
+  'comp': 'Computer Science',
+  'fr': 'French',
+  'draw': 'Drawing',
+  'h&pe': 'Health & PE',
+  'hpe': 'Health & PE',
+  'vdmatvs': 'Value Education',
+  'ge': 'General Knowledge',
+  'gk': 'General Knowledge',
+  'music': 'Music',
+  'art': 'Art & Craft',
+  'evs': 'Environmental Studies'
+};
+
 function matchesPattern(normalizedHeader: string, patterns: string[]): boolean {
   for (const pattern of patterns) {
     const normalizedPattern = normalizeHeader(pattern);
-    // Exact match
     if (normalizedHeader === normalizedPattern) return true;
-    // Contains match (header contains pattern or pattern contains header)
     if (normalizedHeader.includes(normalizedPattern) || normalizedPattern.includes(normalizedHeader)) {
       return true;
     }
@@ -140,9 +174,6 @@ function matchesPattern(normalizedHeader: string, patterns: string[]): boolean {
   return false;
 }
 
-/**
- * Find column by patterns in a row
- */
 function findColumnByPatterns(
   row: any[],
   patterns: string[]
@@ -159,10 +190,6 @@ function findColumnByPatterns(
   return null;
 }
 
-/**
- * Count how many key columns are found in a row
- * Key columns: Name + Enrollment OR Name + S.No (at least 2 of 3)
- */
 function countKeyColumns(row: any[]): {
   count: number;
   hasName: boolean;
@@ -181,10 +208,6 @@ function countKeyColumns(row: any[]): {
   return { count, hasName, hasEnrollment, hasSerial };
 }
 
-/**
- * Scan first N rows to find the header row
- * Returns the row index (0-based) or -1 if not found
- */
 function findHeaderRow(jsonData: any[][], maxRows: number = 20): number {
   const rowsToScan = Math.min(jsonData.length, maxRows);
   
@@ -195,7 +218,6 @@ function findHeaderRow(jsonData: any[][], maxRows: number = 20): number {
     const row = jsonData[i];
     if (!row || row.length === 0) continue;
     
-    // Skip rows that are completely empty or have only one cell (likely title)
     const nonEmptyCells = row.filter((cell: any) => 
       cell !== undefined && cell !== null && String(cell).trim() !== ''
     );
@@ -203,9 +225,7 @@ function findHeaderRow(jsonData: any[][], maxRows: number = 20): number {
     
     const { count, hasName, hasEnrollment } = countKeyColumns(row);
     
-    // We need at least Name + one other (Enrollment or S.No)
     if (count >= 2 && hasName) {
-      // Prefer rows with Name + Enrollment
       const score = hasEnrollment ? count + 1 : count;
       if (score > bestScore) {
         bestScore = score;
@@ -217,9 +237,6 @@ function findHeaderRow(jsonData: any[][], maxRows: number = 20): number {
   return bestRowIndex;
 }
 
-/**
- * Check if a cell value is empty
- */
 function isEmptyCell(value: any): boolean {
   if (value === undefined || value === null) return true;
   const str = String(value).trim();
@@ -227,63 +244,144 @@ function isEmptyCell(value: any): boolean {
 }
 
 /**
- * Detect subject columns
+ * Parse Cambridge Court subject group headers
+ * Detect patterns like: "Mths Th (80)", "Mths Or (20)", "Total of Mths 100"
  */
-function findSubjectColumns(
+function parseSubjectGroups(
   rawHeaders: string[],
-  jsonData: any[][],
-  headerRowIndex: number,
   excludeIndices: Set<number>
-): { index: number; name: string }[] {
-  const subjects: { index: number; name: string }[] = [];
+): { name: string; displayName: string; theoryCol?: number; oralCol?: number; totalCol?: number }[] {
+  const groups: Map<string, { displayName: string; theoryCol?: number; oralCol?: number; totalCol?: number }> = new Map();
   
   for (let i = 0; i < rawHeaders.length; i++) {
     if (excludeIndices.has(i)) continue;
     
-    const header = rawHeaders[i];
+    const header = String(rawHeaders[i] || '').trim();
     if (!header) continue;
     
-    const normalized = normalizeHeader(header);
+    // Clean header - remove HTML tags like <br>
+    const cleanHeader = header.replace(/<br\/?>/gi, ' ').replace(/\s+/g, ' ').trim();
+    const normalizedHeader = cleanHeader.toLowerCase();
     
-    // Check if it's a known subject
-    let isSubject = KNOWN_SUBJECTS.some(subj => 
-      normalized.includes(normalizeHeader(subj)) || normalizeHeader(subj).includes(normalized)
-    );
-    
-    // Also check if the column contains mostly numeric data (marks)
-    if (!isSubject) {
-      let numericCount = 0;
-      let totalCount = 0;
+    // Pattern: "Mths Th (80)" - Theory marks
+    const theoryMatch = normalizedHeader.match(/^(\w+)\s*(?:th|theory)\s*\(?(\d+)?\)?$/i);
+    if (theoryMatch) {
+      const abbrev = theoryMatch[1].toLowerCase();
+      const subjectName = SUBJECT_ABBREVIATIONS[abbrev] || abbrev.charAt(0).toUpperCase() + abbrev.slice(1);
       
-      for (let row = headerRowIndex + 1; row < Math.min(jsonData.length, headerRowIndex + 10); row++) {
-        const value = jsonData[row]?.[i];
-        if (value !== undefined && value !== null && String(value).trim() !== '') {
-          totalCount++;
-          const num = parseFloat(String(value));
-          if (!isNaN(num) && num >= 0 && num <= 100) {
-            numericCount++;
-          }
-        }
+      if (!groups.has(abbrev)) {
+        groups.set(abbrev, { displayName: subjectName });
       }
-      
-      // If >70% of rows are numeric 0-100, likely a marks column
-      if (totalCount > 0 && numericCount / totalCount >= 0.7) {
-        isSubject = true;
-      }
+      groups.get(abbrev)!.theoryCol = i;
+      continue;
     }
     
-    if (isSubject) {
-      // Standardize the subject name for consistent display
-      const standardName = standardizeSubjectName(header.trim());
-      subjects.push({ index: i, name: standardName });
+    // Pattern: "Mths Or (20)" - Oral/Internal marks
+    const oralMatch = normalizedHeader.match(/^(\w+)\s*(?:or|oral|pr|prac|int|internal)\s*\(?(\d+)?\)?$/i);
+    if (oralMatch) {
+      const abbrev = oralMatch[1].toLowerCase();
+      const subjectName = SUBJECT_ABBREVIATIONS[abbrev] || abbrev.charAt(0).toUpperCase() + abbrev.slice(1);
+      
+      if (!groups.has(abbrev)) {
+        groups.set(abbrev, { displayName: subjectName });
+      }
+      groups.get(abbrev)!.oralCol = i;
+      continue;
+    }
+    
+    // Pattern: "Total of Mths 100" - Total marks
+    const totalMatch = normalizedHeader.match(/^total\s*(?:of)?\s*(\w+)\s*\d*$/i);
+    if (totalMatch) {
+      const abbrev = totalMatch[1].toLowerCase();
+      const subjectName = SUBJECT_ABBREVIATIONS[abbrev] || abbrev.charAt(0).toUpperCase() + abbrev.slice(1);
+      
+      if (!groups.has(abbrev)) {
+        groups.set(abbrev, { displayName: subjectName });
+      }
+      groups.get(abbrev)!.totalCol = i;
+      continue;
+    }
+    
+    // Pattern: Single subject column like "Draw Th (100)" or "H&PE Th (100)"
+    const singleMatch = normalizedHeader.match(/^([\w&]+)\s*(?:th|theory)?\s*\(?(\d+)?\)?$/i);
+    if (singleMatch && !groups.has(singleMatch[1].toLowerCase())) {
+      const abbrev = singleMatch[1].toLowerCase();
+      const subjectName = SUBJECT_ABBREVIATIONS[abbrev] || abbrev.charAt(0).toUpperCase() + abbrev.slice(1);
+      
+      // Check if it looks like a subject (has marks pattern or known abbreviation)
+      if (SUBJECT_ABBREVIATIONS[abbrev] || normalizedHeader.includes('(')) {
+        groups.set(abbrev, { displayName: subjectName, theoryCol: i });
+      }
     }
   }
   
-  return subjects;
+  // Convert to array with name key
+  return Array.from(groups.entries()).map(([key, value]) => ({
+    name: key,
+    ...value
+  }));
 }
 
 /**
- * Parse Excel file and extract student data
+ * Parse attendance in "96 / 102" format
+ */
+function parseAttendance(value: any): { present: number; total: number; percentage: number } {
+  if (isEmptyCell(value)) {
+    return { present: 0, total: 0, percentage: 0 };
+  }
+  
+  const str = String(value).trim();
+  
+  // Format: "96 / 102"
+  const slashMatch = str.match(/(\d+)\s*\/\s*(\d+)/);
+  if (slashMatch) {
+    const present = parseInt(slashMatch[1]);
+    const total = parseInt(slashMatch[2]);
+    return { present, total, percentage: total > 0 ? Math.round((present / total) * 100) : 0 };
+  }
+  
+  // Format: "96%" or "96"
+  const percentMatch = str.match(/(\d+(?:\.\d+)?)\s*%?/);
+  if (percentMatch) {
+    const percentage = parseFloat(percentMatch[1]);
+    return { present: 0, total: 0, percentage: Math.round(percentage) };
+  }
+  
+  return { present: 0, total: 0, percentage: 0 };
+}
+
+/**
+ * Parse marks that may include grade like "B2 (69)"
+ */
+function parseMarks(value: any): number | null {
+  if (isEmptyCell(value)) {
+    return null; // Preserve blanks
+  }
+  
+  const str = String(value).trim();
+  
+  // Pattern: "B2 (69)" - extract number from parentheses
+  const gradeMatch = str.match(/\((\d+)\s*\)/);
+  if (gradeMatch) {
+    return parseInt(gradeMatch[1]);
+  }
+  
+  // Simple number
+  const numMatch = str.match(/^(\d+(?:\.\d+)?)$/);
+  if (numMatch) {
+    return parseFloat(numMatch[1]);
+  }
+  
+  // "NA" or similar
+  if (str.toUpperCase() === 'NA') {
+    return null;
+  }
+  
+  return null;
+}
+
+/**
+ * Parse Excel file with Cambridge Court format
  */
 export async function importStudentsFromExcel(file: File): Promise<ExcelImportResult> {
   return new Promise((resolve, reject) => {
@@ -303,7 +401,7 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
           return;
         }
         
-        console.log('📊 Scanning Excel for header row...');
+        console.log('📊 Cambridge Court Excel Import - Scanning for header row...');
         console.log(`   Total rows in file: ${jsonData.length}`);
         
         // =============================================================
@@ -313,7 +411,7 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
         const headerRowIndex = findHeaderRow(jsonData, 20);
         
         if (headerRowIndex === -1) {
-          reject(new Error('Unrecognized format. Please upload a valid student list with columns like "Student Name" and "Enrollment No".'));
+          reject(new Error('Unrecognized format. Please upload a valid Cambridge Court marksheet with columns like "Name" and "Enrollment No".'));
           return;
         }
         
@@ -322,7 +420,7 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
         const headerRow = jsonData[headerRowIndex];
         const rawHeaders = headerRow.map((h: any) => String(h || '').trim());
         
-        console.log('📋 Headers detected:', rawHeaders.filter(h => h));
+        console.log('📋 Headers detected:', rawHeaders.filter(h => h).slice(0, 15), '...');
         
         const warnings: string[] = [];
         const autoGenerated = { serialNumber: false };
@@ -331,64 +429,59 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
         // STEP 2: DETECT COLUMNS
         // =============================================================
         
-        // Serial Number column
         const serialCol = findColumnByPatterns(headerRow, SERIAL_PATTERNS);
-        if (serialCol) {
-          console.log(`✅ S.No column: "${serialCol.header}" (column ${serialCol.index + 1})`);
-        } else {
-          console.log('⚠️ S.No column not found → will auto-generate');
-          autoGenerated.serialNumber = true;
-          warnings.push('S.No column not found → Auto-generated sequential numbers');
-        }
-        
-        // Student Name column - REQUIRED
         const nameCol = findColumnByPatterns(headerRow, NAME_PATTERNS);
-        if (nameCol) {
-          console.log(`✅ Name column: "${nameCol.header}" (column ${nameCol.index + 1})`);
-        } else {
-          reject(new Error('Student Name column missing. Please ensure your file has a column named "Name", "Student Name", or similar.'));
-          return;
-        }
-        
-        // Enrollment Number column - REQUIRED
         const enrollmentCol = findColumnByPatterns(headerRow, ENROLLMENT_PATTERNS);
-        if (enrollmentCol) {
-          console.log(`✅ Enrollment column: "${enrollmentCol.header}" (column ${enrollmentCol.index + 1})`);
-        } else {
-          reject(new Error('Enrollment Number column missing. Please ensure your file has a column named "Enrollment No", "Adm No", "ER No", or similar.'));
+        const fatherNameCol = findColumnByPatterns(headerRow, FATHER_NAME_PATTERNS);
+        const motherNameCol = findColumnByPatterns(headerRow, MOTHER_NAME_PATTERNS);
+        const dobCol = findColumnByPatterns(headerRow, DOB_PATTERNS);
+        const genderCol = findColumnByPatterns(headerRow, GENDER_PATTERNS);
+        const attendanceCol = findColumnByPatterns(headerRow, ATTENDANCE_COMBINED_PATTERNS);
+        const grandTotalCol = findColumnByPatterns(headerRow, GRAND_TOTAL_PATTERNS);
+        const maxGrandTotalCol = findColumnByPatterns(headerRow, MAX_GRAND_TOTAL_PATTERNS);
+        const percentageCol = findColumnByPatterns(headerRow, PERCENTAGE_PATTERNS);
+        const gradeCol = findColumnByPatterns(headerRow, GRADE_PATTERNS);
+        const remarksCol = findColumnByPatterns(headerRow, REMARKS_PATTERNS);
+        
+        if (!nameCol) {
+          reject(new Error('Student Name column missing. Please ensure your file has a column named "Name".'));
           return;
         }
         
-        // Other columns
-        const rollCol = findColumnByPatterns(headerRow, ROLL_PATTERNS);
-        const classCol = findColumnByPatterns(headerRow, CLASS_PATTERNS);
-        const sectionCol = findColumnByPatterns(headerRow, SECTION_PATTERNS);
-        const attendancePresentCol = findColumnByPatterns(headerRow, ATTENDANCE_PRESENT_PATTERNS);
-        const attendanceTotalCol = findColumnByPatterns(headerRow, ATTENDANCE_TOTAL_PATTERNS);
-        const attendancePercentageCol = findColumnByPatterns(headerRow, ATTENDANCE_PERCENTAGE_PATTERNS);
-        const behaviorCol = findColumnByPatterns(headerRow, BEHAVIOR_PATTERNS);
+        if (!enrollmentCol) {
+          reject(new Error('Enrollment Number column missing. Please ensure your file has a column named "Enrollment No".'));
+          return;
+        }
         
-        // Build excluded indices for subject detection
+        console.log(`✅ Name column: "${nameCol.header}" (column ${nameCol.index + 1})`);
+        console.log(`✅ Enrollment column: "${enrollmentCol.header}" (column ${enrollmentCol.index + 1})`);
+        
+        // NOTE: Roll Number is derived from Sr. No. as per requirement
+        if (serialCol) {
+          console.log(`✅ Sr.No column: "${serialCol.header}" → Will be used as Roll Number`);
+        } else {
+          console.log('⚠️ Sr.No column not found → Roll Number will be auto-generated from row number');
+          autoGenerated.serialNumber = true;
+        }
+        
+        // Build excluded indices
         const excludeIndices = new Set<number>();
-        [serialCol, nameCol, enrollmentCol, rollCol, classCol, sectionCol,
-         attendancePresentCol, attendanceTotalCol, attendancePercentageCol, behaviorCol].forEach(col => {
+        [serialCol, nameCol, enrollmentCol, fatherNameCol, motherNameCol, dobCol, genderCol,
+         attendanceCol, grandTotalCol, maxGrandTotalCol, percentageCol, gradeCol, remarksCol].forEach(col => {
           if (col) excludeIndices.add(col.index);
         });
         
-        // Detect subject columns
-        const subjectCols = findSubjectColumns(rawHeaders, jsonData, headerRowIndex, excludeIndices);
-        if (subjectCols.length > 0) {
-          console.log(`📚 Subject columns: ${subjectCols.map(s => s.name).join(', ')}`);
-        }
+        // Detect subject groups
+        const subjectGroups = parseSubjectGroups(rawHeaders, excludeIndices);
+        console.log(`📚 Subject groups detected: ${subjectGroups.map(s => s.displayName).join(', ')}`);
         
         // =============================================================
         // STEP 3: PARSE STUDENT DATA
         // =============================================================
         
         const students: ImportedStudent[] = [];
-        const serialNumbers = new Set<number>();
-        let autoSerialCounter = 0;
         let skippedRows = 0;
+        let autoRowCounter = 0;
         
         for (let rowIndex = headerRowIndex + 1; rowIndex < jsonData.length; rowIndex++) {
           const row = jsonData[rowIndex];
@@ -397,86 +490,102 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
           const hasAnyData = row.some((cell: any) => !isEmptyCell(cell));
           if (!hasAnyData) continue;
           
-          autoSerialCounter++;
+          autoRowCounter++;
           
-          // --- Serial Number ---
-          let serialNo: number;
+          // --- Student Name (REQUIRED, preserve exact value) ---
+          const name = String(row[nameCol.index] || '').trim();
+          if (!name) {
+            skippedRows++;
+            continue;
+          }
+          
+          // --- Enrollment Number (REQUIRED, preserve exact value) ---
+          const enrollmentNumber = String(row[enrollmentCol.index] || '').trim();
+          if (!enrollmentNumber) {
+            skippedRows++;
+            continue;
+          }
+          
+          // --- Roll Number: Derived from Sr. No. or row number ---
+          let rollNumber: string;
           if (serialCol && !isEmptyCell(row[serialCol.index])) {
-            serialNo = parseInt(String(row[serialCol.index]));
-            if (isNaN(serialNo) || serialNo <= 0) {
-              serialNo = autoSerialCounter;
-            }
+            rollNumber = String(row[serialCol.index]).trim();
           } else {
-            serialNo = autoSerialCounter;
+            rollNumber = String(autoRowCounter);
           }
           
-          // Handle duplicate serial numbers
-          if (serialNumbers.has(serialNo)) {
-            const original = serialNo;
-            while (serialNumbers.has(serialNo)) {
-              serialNo++;
-            }
-            if (serialCol) {
-              warnings.push(`Row ${rowIndex + 1}: Duplicate S.No ${original} → Changed to ${serialNo}`);
-            }
-          }
-          serialNumbers.add(serialNo);
+          // --- Serial Number (for internal use) ---
+          const serialNo = serialCol && !isEmptyCell(row[serialCol.index])
+            ? parseInt(String(row[serialCol.index])) || autoRowCounter
+            : autoRowCounter;
           
-          // --- Student Name (use exact value, skip if blank) ---
-          if (isEmptyCell(row[nameCol.index])) {
-            skippedRows++;
-            continue; // Skip rows with blank names
-          }
-          const name = String(row[nameCol.index]).trim();
+          // --- Other identity fields ---
+          const fatherName = fatherNameCol ? String(row[fatherNameCol.index] || '').trim() : undefined;
+          const motherName = motherNameCol ? String(row[motherNameCol.index] || '').trim() : undefined;
+          const dob = dobCol ? String(row[dobCol.index] || '').trim() : undefined;
+          const gender = genderCol ? String(row[genderCol.index] || '').trim() : undefined;
           
-          // --- Enrollment Number (use exact value, skip if blank) ---
-          if (isEmptyCell(row[enrollmentCol.index])) {
-            skippedRows++;
-            continue; // Skip rows with blank enrollment
-          }
-          const enrollmentNumber = String(row[enrollmentCol.index]).trim();
-          
-          // --- Other fields ---
-          const rollNumber = rollCol && !isEmptyCell(row[rollCol.index])
-            ? String(row[rollCol.index]).trim() : '';
-          const className = classCol && !isEmptyCell(row[classCol.index])
-            ? String(row[classCol.index]).trim() : undefined;
-          const section = sectionCol && !isEmptyCell(row[sectionCol.index])
-            ? String(row[sectionCol.index]).trim() : undefined;
-          
-          // --- Subject Marks ---
+          // --- Subject Marks (grouped format) ---
+          const subjectMarksDetail: Record<string, { theory: number; oral: number; total: number }> = {};
           const subjectMarks: Record<string, number> = {};
-          subjectCols.forEach(({ index, name: subjectName }) => {
-            const value = row[index];
-            if (!isEmptyCell(value)) {
-              const numValue = parseFloat(String(value));
-              if (!isNaN(numValue)) {
-                subjectMarks[subjectName] = Math.min(100, Math.max(0, numValue));
-              }
+          
+          subjectGroups.forEach(group => {
+            const theory = group.theoryCol !== undefined ? parseMarks(row[group.theoryCol]) : null;
+            const oral = group.oralCol !== undefined ? parseMarks(row[group.oralCol]) : null;
+            const total = group.totalCol !== undefined ? parseMarks(row[group.totalCol]) : null;
+            
+            // Only add if we have at least some data
+            if (theory !== null || oral !== null || total !== null) {
+              subjectMarksDetail[group.displayName] = {
+                theory: theory ?? 0,
+                oral: oral ?? 0,
+                total: total ?? (theory ?? 0) + (oral ?? 0)
+              };
+              subjectMarks[group.displayName] = subjectMarksDetail[group.displayName].total;
             }
           });
           
           // --- Attendance ---
-          const attendancePresent = attendancePresentCol && !isEmptyCell(row[attendancePresentCol.index])
-            ? parseInt(String(row[attendancePresentCol.index])) || 0 : 0;
-          const attendanceTotal = attendanceTotalCol && !isEmptyCell(row[attendanceTotalCol.index])
-            ? parseInt(String(row[attendanceTotalCol.index])) || 0 : 0;
+          const attendance = attendanceCol 
+            ? parseAttendance(row[attendanceCol.index])
+            : { present: 0, total: 0, percentage: 0 };
           
-          // --- Behavior Notes ---
-          const behaviorNotes = behaviorCol && !isEmptyCell(row[behaviorCol.index])
-            ? String(row[behaviorCol.index]).trim() : undefined;
+          // --- Grand Total & Percentage ---
+          const grandTotal = grandTotalCol ? parseMarks(row[grandTotalCol.index]) ?? 0 : 0;
+          const maxGrandTotal = maxGrandTotalCol ? parseMarks(row[maxGrandTotalCol.index]) ?? 0 : 0;
+          
+          let percentageMarks = 0;
+          if (percentageCol) {
+            const percStr = String(row[percentageCol.index] || '').trim();
+            const percMatch = percStr.match(/(\d+(?:\.\d+)?)\s*%?/);
+            if (percMatch) {
+              percentageMarks = parseFloat(percMatch[1]);
+            }
+          }
+          
+          // --- Grade & Remarks ---
+          const grade = gradeCol ? String(row[gradeCol.index] || '').trim() : undefined;
+          const remarks = remarksCol ? String(row[remarksCol.index] || '').trim() : undefined;
           
           students.push({
             serialNo,
             enrollmentNumber,
             name,
             rollNumber,
-            className,
-            section,
+            fatherName,
+            motherName,
+            dob,
+            gender,
+            subjectMarksDetail: Object.keys(subjectMarksDetail).length > 0 ? subjectMarksDetail : undefined,
             subjectMarks: Object.keys(subjectMarks).length > 0 ? subjectMarks : undefined,
-            attendancePresent,
-            attendanceTotal,
-            behaviorNotes,
+            attendancePresent: attendance.present,
+            attendanceTotal: attendance.total,
+            attendancePercentage: attendance.percentage,
+            grandTotal,
+            maxGrandTotal,
+            percentageMarks,
+            grade,
+            remarks,
           });
         }
         
@@ -489,17 +598,14 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
           return;
         }
         
-        console.log(`✅ Successfully imported ${students.length} students from header row ${headerRowIndex + 1}`);
-        if (warnings.length > 0) {
-          console.log('⚠️ Warnings:', warnings);
-        }
+        console.log(`✅ Successfully imported ${students.length} students`);
         
-        // Calculate validation issues
+        // Validation issues
         const validationIssues = {
           identicalRollEnrollment: students.filter(s => s.rollNumber && s.enrollmentNumber && s.rollNumber.trim() === s.enrollmentNumber.trim()).length,
           missingRoll: students.filter(s => !s.rollNumber).length,
           missingEnrollment: students.filter(s => !s.enrollmentNumber).length,
-          missingAttendance: students.filter(s => !s.attendancePresent && !s.attendanceTotal).length,
+          missingAttendance: students.filter(s => !s.attendancePresent && !s.attendanceTotal && !s.attendancePercentage).length,
         };
         
         if (validationIssues.identicalRollEnrollment > 0) {
@@ -510,19 +616,28 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
           students,
           autoGenerated,
           headers: rawHeaders,
-          headerRowIndex: headerRowIndex + 1, // 1-based for display
+          headerRowIndex: headerRowIndex + 1,
           detectedColumns: {
             serialNo: serialCol,
             name: nameCol,
             enrollment: enrollmentCol,
-            rollNumber: rollCol,
+            rollNumber: serialCol, // Roll is derived from Serial
+            fatherName: fatherNameCol,
+            motherName: motherNameCol,
+            dob: dobCol,
+            gender: genderCol,
             attendance: {
-              present: attendancePresentCol,
-              total: attendanceTotalCol,
-              percentage: attendancePercentageCol,
+              present: null,
+              total: null,
+              percentage: attendanceCol,
             },
+            grandTotal: grandTotalCol,
+            percentage: percentageCol,
+            grade: gradeCol,
+            remarks: remarksCol,
           },
-          detectedSubjects: subjectCols.map(s => s.name),
+          detectedSubjects: subjectGroups.map(s => s.displayName),
+          detectedSubjectGroups: subjectGroups,
           warnings,
           validationIssues,
         });
@@ -551,58 +666,99 @@ export function createStudentsFromImport(
     .sort((a, b) => a.serialNo - b.serialNo)
     .map((imp) => {
       const subjectMarks: Record<string, number> = {};
+      const subjectMarksDetail: Record<string, SubjectMarksDetail> = {};
       const subjectRatings: Record<string, 'Excellent' | 'Good' | 'Average' | 'Needs Improvement'> = {};
       
-      // Map imported subject marks to selected subjects
+      // Use imported marks directly
       selectedSubjects.forEach(subject => {
-        const normalizedSubject = subject.toLowerCase();
-        let foundMark: number | undefined;
-        
-        if (imp.subjectMarks) {
-          for (const [key, value] of Object.entries(imp.subjectMarks)) {
-            if (key.toLowerCase().includes(normalizedSubject) || 
-                normalizedSubject.includes(key.toLowerCase())) {
-              foundMark = value;
-              break;
+        // Check if we have detailed marks
+        if (imp.subjectMarksDetail?.[subject]) {
+          const detail = imp.subjectMarksDetail[subject];
+          subjectMarksDetail[subject] = {
+            theory: detail.theory,
+            internal: detail.oral,
+            total: detail.total
+          };
+          subjectMarks[subject] = detail.total;
+        } else if (imp.subjectMarks?.[subject] !== undefined) {
+          // Fallback to simple marks
+          subjectMarks[subject] = imp.subjectMarks[subject];
+          subjectMarksDetail[subject] = {
+            theory: imp.subjectMarks[subject],
+            internal: 0,
+            total: imp.subjectMarks[subject]
+          };
+        } else {
+          // Check case-insensitive match
+          const normalizedSubject = subject.toLowerCase();
+          let found = false;
+          
+          if (imp.subjectMarksDetail) {
+            for (const [key, value] of Object.entries(imp.subjectMarksDetail)) {
+              if (key.toLowerCase() === normalizedSubject) {
+                subjectMarksDetail[subject] = {
+                  theory: value.theory,
+                  internal: value.oral,
+                  total: value.total
+                };
+                subjectMarks[subject] = value.total;
+                found = true;
+                break;
+              }
             }
+          }
+          
+          if (!found && imp.subjectMarks) {
+            for (const [key, value] of Object.entries(imp.subjectMarks)) {
+              if (key.toLowerCase() === normalizedSubject) {
+                subjectMarks[subject] = value;
+                subjectMarksDetail[subject] = { theory: value, internal: 0, total: value };
+                found = true;
+                break;
+              }
+            }
+          }
+          
+          // Leave blank if not found (don't fill with 0)
+          if (!found) {
+            subjectMarksDetail[subject] = createEmptySubjectMarksDetail();
           }
         }
         
-        if (foundMark !== undefined) {
-          subjectMarks[subject] = foundMark;
-          // Convert marks to ratings
-          if (foundMark >= 90) subjectRatings[subject] = 'Excellent';
-          else if (foundMark >= 70) subjectRatings[subject] = 'Good';
-          else if (foundMark >= 50) subjectRatings[subject] = 'Average';
-          else subjectRatings[subject] = 'Needs Improvement';
-        }
+        // Set ratings based on total marks
+        const totalMark = subjectMarks[subject] || 0;
+        if (totalMark >= 90) subjectRatings[subject] = 'Excellent';
+        else if (totalMark >= 70) subjectRatings[subject] = 'Good';
+        else if (totalMark >= 50) subjectRatings[subject] = 'Average';
+        else subjectRatings[subject] = 'Needs Improvement';
       });
       
       // Calculate totals
-      const totalMarks = Object.values(subjectMarks).reduce((sum, m) => sum + m, 0);
-      const maxMarks = Object.keys(subjectMarks).length * 100;
-      const percentage = maxMarks > 0 ? Math.round((totalMarks / maxMarks) * 100) : 0;
+      const validMarks = Object.values(subjectMarks).filter(m => m !== undefined && m > 0);
+      const totalMarks = validMarks.reduce((sum, m) => sum + m, 0);
+      const maxMarks = validMarks.length * 100;
+      const percentage = maxMarks > 0 ? Math.round((totalMarks / maxMarks) * 100) : (imp.percentageMarks || 0);
       
       // Create base student with required fields
       const baseStudent = createEmptyStudent(imp.serialNo, selectedSubjects);
       
       return {
         ...baseStudent,
-        id: `student-${imp.serialNo}-${Date.now()}`,
+        id: `student-${imp.serialNo}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         serialNo: imp.serialNo,
         enrollmentNumber: imp.enrollmentNumber,
         name: imp.name,
         rollNumber: imp.rollNumber,
-        className: imp.className,
-        section: imp.section,
         subjectMarks,
+        subjectMarksDetail,
         subjectRatings,
-        total: totalMarks,
-        percentage,
+        total: imp.grandTotal || totalMarks,
+        percentage: imp.percentageMarks || percentage,
         attendancePresent: imp.attendancePresent || 0,
         attendanceTotal: imp.attendanceTotal || 0,
-        behaviorNotes: imp.behaviorNotes || '',
-        moodRating: getMoodFromPerformance(percentage),
+        attendancePercentage: imp.attendancePercentage || 0,
+        remark: imp.remarks || '',
+        moodRating: getMoodFromPerformance(imp.percentageMarks || percentage),
       };
     });
 }
