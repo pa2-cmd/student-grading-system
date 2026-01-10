@@ -684,6 +684,7 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
 
 /**
  * Convert ImportedStudent array to Student objects for the app
+ * Preserves ALL fields exactly as imported from reference sheet
  */
 export function createStudentsFromImport(
   imported: ImportedStudent[], 
@@ -702,18 +703,18 @@ export function createStudentsFromImport(
         if (imp.subjectMarksDetail?.[subject]) {
           const detail = imp.subjectMarksDetail[subject];
           subjectMarksDetail[subject] = {
-            theory: detail.theory,
-            internal: detail.oral,
-            total: detail.total
+            theory: detail.theory ?? 0,
+            internal: detail.oral ?? 0,
+            total: detail.total ?? 0
           };
-          subjectMarks[subject] = detail.total;
-        } else if (imp.subjectMarks?.[subject] !== undefined) {
+          subjectMarks[subject] = detail.total ?? 0;
+        } else if (imp.subjectMarks?.[subject] !== undefined && imp.subjectMarks[subject] !== null) {
           // Fallback to simple marks
-          subjectMarks[subject] = imp.subjectMarks[subject];
+          subjectMarks[subject] = imp.subjectMarks[subject]!;
           subjectMarksDetail[subject] = {
-            theory: imp.subjectMarks[subject],
+            theory: imp.subjectMarks[subject]!,
             internal: 0,
-            total: imp.subjectMarks[subject]
+            total: imp.subjectMarks[subject]!
           };
         } else {
           // Check case-insensitive match
@@ -724,11 +725,11 @@ export function createStudentsFromImport(
             for (const [key, value] of Object.entries(imp.subjectMarksDetail)) {
               if (key.toLowerCase() === normalizedSubject) {
                 subjectMarksDetail[subject] = {
-                  theory: value.theory,
-                  internal: value.oral,
-                  total: value.total
+                  theory: value.theory ?? 0,
+                  internal: value.oral ?? 0,
+                  total: value.total ?? 0
                 };
-                subjectMarks[subject] = value.total;
+                subjectMarks[subject] = value.total ?? 0;
                 found = true;
                 break;
               }
@@ -737,7 +738,7 @@ export function createStudentsFromImport(
           
           if (!found && imp.subjectMarks) {
             for (const [key, value] of Object.entries(imp.subjectMarks)) {
-              if (key.toLowerCase() === normalizedSubject) {
+              if (key.toLowerCase() === normalizedSubject && value !== null) {
                 subjectMarks[subject] = value;
                 subjectMarksDetail[subject] = { theory: value, internal: 0, total: value };
                 found = true;
@@ -760,7 +761,7 @@ export function createStudentsFromImport(
         else subjectRatings[subject] = 'Needs Improvement';
       });
       
-      // Calculate totals
+      // Calculate totals - only from subjects with valid marks
       const validMarks = Object.values(subjectMarks).filter(m => m !== undefined && m > 0);
       const totalMarks = validMarks.reduce((sum, m) => sum + m, 0);
       const maxMarks = validMarks.length * 100;
@@ -776,11 +777,18 @@ export function createStudentsFromImport(
         enrollmentNumber: imp.enrollmentNumber,
         name: imp.name,
         rollNumber: imp.rollNumber,
+        fatherName: imp.fatherName || '',
+        motherName: imp.motherName || '',
+        dob: imp.dob || '',
+        gender: imp.gender || '',
         subjectMarks,
         subjectMarksDetail,
         subjectRatings,
         total: imp.grandTotal || totalMarks,
+        grandTotal: imp.grandTotal || totalMarks,
+        maxGrandTotal: imp.maxGrandTotal || maxMarks,
         percentage: imp.percentageMarks || percentage,
+        grade: imp.grade || '',
         attendancePresent: imp.attendancePresent || 0,
         attendanceTotal: imp.attendanceTotal || 0,
         attendancePercentage: imp.attendancePercentage || 0,

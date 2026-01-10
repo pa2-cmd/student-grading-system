@@ -77,18 +77,22 @@ export interface SubjectMarksDetail {
   total: number;       // Auto-calculated: theory + internal
 }
 
-// Student data structure
+// Student data structure - EXACT match to Cambridge Court reference sheet
 export interface Student {
   id: string;
-  serialNo: number;
-  enrollmentNumber: string;
-  name: string;
-  rollNumber: string;
+  serialNo: number;           // Sr. No. column
+  enrollmentNumber: string;   // Enrollment No. column
+  name: string;               // Name column
+  rollNumber: string;         // Derived from Sr. No.
+  fatherName: string;         // Father Name column
+  motherName: string;         // Mother Name column
+  dob: string;                // DOB column
+  gender: string;             // Gender column (M/F)
   photo?: string;
   
-  // Subject marks - Cambridge Court format (Theory + Internal + Total)
+  // Subject marks - Cambridge Court format (Theory + Internal/Oral + Total)
   subjectMarks: Record<string, number>; // Simple marks for backward compatibility
-  subjectMarksDetail: Record<string, SubjectMarksDetail>; // Detailed marks (Theory/Internal/Total)
+  subjectMarksDetail: Record<string, SubjectMarksDetail>; // Detailed marks (Theory/Oral/Total)
   subjectRatings: Record<string, SkillRating>;
   
   // Term-wise data storage
@@ -98,10 +102,15 @@ export interface Student {
     percentage: number;
   }>;
   
-  // Attendance
+  // Attendance - format: "96 / 102"
   attendancePresent: number;
   attendanceTotal: number;
   attendancePercentage: number;
+  
+  // Totals from reference sheet
+  maxGrandTotal: number;      // Max Grand Total column
+  grandTotal: number;         // Grand Total Obtained column
+  grade: string;              // Grade column
   
   // Behavior & Learning Skills
   behaviorNotes: string;
@@ -112,13 +121,13 @@ export interface Student {
   strengths: string[];
   improvements: string[];
   nextSteps: string[];
-  remark: string;
+  remark: string;             // Remarks column / AI-generated review
   teacherNotes: string;
   
   // State & Rankings
   isGeneratingRemark: boolean;
   total: number;
-  percentage: number;
+  percentage: number;         // % Marks column
   classPosition: number;
 }
 
@@ -264,7 +273,11 @@ export function createEmptyStudent(serialNo: number, selectedSubjects: string[])
     serialNo,
     enrollmentNumber: '',
     name: '',
-    rollNumber: '',
+    rollNumber: String(serialNo),
+    fatherName: '',
+    motherName: '',
+    dob: '',
+    gender: '',
     photo: '',
     subjectMarks,
     subjectMarksDetail,
@@ -273,6 +286,9 @@ export function createEmptyStudent(serialNo: number, selectedSubjects: string[])
     attendancePresent: 0,
     attendanceTotal: 0,
     attendancePercentage: 0,
+    maxGrandTotal: 0,
+    grandTotal: 0,
+    grade: '',
     behaviorNotes: '',
     learningSkills,
     moodRating: 'good',
@@ -328,7 +344,8 @@ export const COMMENT_TONES: { value: CommentTone; label: string; description: st
 ];
 
 export function getDefaultAssessmentData(): AssessmentData {
-  const defaultSubjects = ['English', 'Hindi', 'Mathematics', 'Science', 'Social Studies'];
+  // Default subjects matching Cambridge Court format
+  const defaultSubjects: string[] = [];
   
   return {
     schoolName: '',
@@ -338,7 +355,7 @@ export function getDefaultAssessmentData(): AssessmentData {
     academicYear: `${new Date().getFullYear()}-${(new Date().getFullYear() + 1).toString().slice(-2)}`,
     term: 'Term 1',
     totalStrength: 0,
-    students: [createEmptyStudent(1, defaultSubjects)],
+    students: [], // EMPTY on initial load - data comes from Excel import only
     language: 'english',
     selectedSubjects: defaultSubjects,
     commentLibrary: [],
