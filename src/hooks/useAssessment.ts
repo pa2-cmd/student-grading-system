@@ -402,7 +402,11 @@ function migrateData(parsed: any): AssessmentData {
         serialNo: student.serialNo || index + 1,
         enrollmentNumber: student.enrollmentNumber || '',
         name: student.name || '',
-        rollNumber: student.rollNumber || '',
+        rollNumber: student.rollNumber || String(student.serialNo || index + 1),
+        fatherName: student.fatherName || '',
+        motherName: student.motherName || '',
+        dob: student.dob || '',
+        gender: student.gender || '',
         photo: student.photo || '',
         subjectMarks,
         subjectMarksDetail,
@@ -411,6 +415,9 @@ function migrateData(parsed: any): AssessmentData {
         attendancePresent: student.attendancePresent || 0,
         attendanceTotal: student.attendanceTotal || 0,
         attendancePercentage: student.attendancePercentage || 0,
+        maxGrandTotal: student.maxGrandTotal || 0,
+        grandTotal: student.grandTotal || 0,
+        grade: student.grade || '',
         behaviorNotes: student.behaviorNotes || '',
         learningSkills: student.learningSkills || {},
         moodRating: student.moodRating || 'good',
@@ -427,9 +434,8 @@ function migrateData(parsed: any): AssessmentData {
     });
   }
   
-  if (migrated.students.length === 0) {
-    migrated.students = [createEmptyStudent(1, migrated.selectedSubjects)];
-  }
+  // Don't add default students - keep empty if no students imported
+  // This ensures app starts with no data until Excel is uploaded
   
   return migrated;
 }

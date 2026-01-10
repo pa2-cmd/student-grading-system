@@ -89,43 +89,46 @@ export async function exportStudentPDF({
   addLine();
 
   // ===========================
-  // STUDENT INFORMATION SECTION
+  // STUDENT INFORMATION SECTION - Match reference sheet headings
   // ===========================
   
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
+  doc.setFontSize(10);
   doc.setTextColor(0, 0, 0);
 
-  // Calculate attendance string
+  // Calculate attendance string - format: "96 / 102 (94%)"
   const attendanceStr = student.attendanceTotal > 0 
     ? `${student.attendancePresent} / ${student.attendanceTotal} (${Math.round((student.attendancePresent / student.attendanceTotal) * 100)}%)`
     : '-';
 
-  // Student details in 2-column layout
-  const infoRows = [
-    ['Student Name:', student.name, 'Class:', `${className || '-'} - ${section || '-'}`],
-    ['Roll Number:', student.rollNumber || String(student.serialNo), 'Enrollment No:', student.enrollmentNumber || '-'],
+  // Student details in grid layout - matching reference sheet columns
+  const detailRows = [
+    ['Name:', student.name, 'Enrollment No:', student.enrollmentNumber || '-'],
+    ['Sr. No.:', String(student.serialNo), 'Class:', `${className || '-'} - ${section || '-'}`],
+    ['Father Name:', student.fatherName || '-', 'Mother Name:', student.motherName || '-'],
+    ['DOB:', student.dob || '-', 'Gender:', student.gender || '-'],
     ['Class Position:', `${student.classPosition} / ${totalStudents}`, 'Attendance:', attendanceStr],
-    ['Grade:', getGradeFromPercentage(student.percentage), 'Term:', term],
+    ['Grade:', student.grade || getGradeFromPercentage(student.percentage), 'Term:', term],
   ];
 
   const leftCol = margin;
-  const midLeft = 50;
+  const midLeft = 45;
   const rightCol = pageWidth / 2 + 5;
-  const midRight = pageWidth / 2 + 50;
+  const midRight = pageWidth / 2 + 45;
 
-  infoRows.forEach(row => {
+  detailRows.forEach(row => {
     doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
     doc.text(row[0], leftCol, yPos);
     doc.setFont('helvetica', 'normal');
-    doc.text(String(row[1]), midLeft, yPos);
+    doc.text(String(row[1]).substring(0, 30), midLeft, yPos);
     
     doc.setFont('helvetica', 'bold');
     doc.text(row[2], rightCol, yPos);
     doc.setFont('helvetica', 'normal');
-    doc.text(String(row[3]), midRight, yPos);
+    doc.text(String(row[3]).substring(0, 30), midRight, yPos);
     
-    yPos += 7;
+    yPos += 6;
   });
 
   yPos += 5;
