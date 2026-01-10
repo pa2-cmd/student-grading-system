@@ -1,66 +1,53 @@
 import * as XLSX from 'xlsx';
-import { AssessmentData, getGradeFromPercentage, SubjectMarksDetail } from '@/types/assessment';
+import { AssessmentData, getGradeFromPercentage } from '@/types/assessment';
 
 /**
  * =============================================================
- * CAMBRIDGE COURT MARKSHEET EXCEL EXPORT - EXACT FORMAT MATCH
+ * MARKMASTER EXCEL EXPORT - EXACT SCHEMA MATCH
  * =============================================================
  * 
- * Exports in EXACT format of reference sheet:
- * - Sr. No., Enrollment No., Name, Father Name, Mother Name, DOB, Gender
- * - Subject groups: Th (80), Or (20), Total (100)
- * - Max Grand Total, Grand Total Obtained, % Marks, Remarks, Grade, Attendance
- * 
- * CRITICAL: All headings match character-by-character
- * CRITICAL: Blank cells preserved as blank (not zero)
- * CRITICAL: Column order exactly as reference sheet
+ * EXACT HEADERS (NON-NEGOTIABLE):
+ * Sr. No. | Enrollment No. | Name | Father Name | Mother Name | DOB | Gender |
+ * [Subject groups: Mths Th (80), Mths Or (20), Total of Mths 100, ...] |
+ * Draw Th (100) | H&PE Th (100) | VDMATVS Th (100) |
+ * Max Grand Total | Grand Total Obtained | % Marks | Remarks | Grade | Attendance
  */
 
-/**
- * Get subject abbreviation matching Cambridge Court format EXACTLY
- */
-function getSubjectAbbreviation(subject: string): string {
-  const abbrevMap: Record<string, string> = {
-    'Mathematics': 'Mths',
-    'Maths': 'Mths',
-    'English': 'Eng',
-    'Hindi': 'Hin',
-    'Science': 'Sc',
-    'Social Studies': 'Ssc',
-    'Social Science': 'Ssc',
-    'Sanskrit': 'Sans',
-    'Computer Science': 'Comp',
-    'Computer': 'Comp',
-    'French': 'Fr',
-    'Drawing': 'Draw',
-    'Art': 'Draw',
-    'Art & Craft': 'Draw',
-    'Health & PE': 'H&PE',
-    'Health & Physical Education': 'H&PE',
-    'Physical Education': 'H&PE',
-    'Value Education': 'VDMATVS',
-    'Moral Science': 'VDMATVS',
-    'General Knowledge': 'GK',
-    'Environmental Studies': 'EVS',
-    'Music': 'Music',
-  };
-  
-  // Check for direct match first
-  if (abbrevMap[subject]) return abbrevMap[subject];
-  
-  // Try case-insensitive match
-  const lowerSubject = subject.toLowerCase();
-  for (const [key, value] of Object.entries(abbrevMap)) {
-    if (key.toLowerCase() === lowerSubject) return value;
-  }
-  
-  // Return first 4 characters as abbreviation
-  return subject.substring(0, 4);
+// Subject configuration - EXACT match to reference sheet
+const SUBJECT_CONFIG = [
+  { abbrev: 'Mths', full: 'Mathematics', theoryMax: 80, oralMax: 20 },
+  { abbrev: 'Eng', full: 'English', theoryMax: 80, oralMax: 20 },
+  { abbrev: 'Hin', full: 'Hindi', theoryMax: 80, oralMax: 20 },
+  { abbrev: 'Sc', full: 'Science', theoryMax: 80, oralMax: 20 },
+  { abbrev: 'Ssc', full: 'Social Studies', theoryMax: 80, oralMax: 20 },
+  { abbrev: 'Sans', full: 'Sanskrit', theoryMax: 80, oralMax: 20 },
+  { abbrev: 'Comp', full: 'Computer Science', theoryMax: 60, oralMax: 40 },
+  { abbrev: 'Fr', full: 'French', theoryMax: 80, oralMax: 20 },
+  { abbrev: 'Draw', full: 'Drawing', theoryMax: 100, oralMax: 0 },
+  { abbrev: 'H&PE', full: 'Health & PE', theoryMax: 100, oralMax: 0 },
+  { abbrev: 'VDMATVS', full: 'Value Education', theoryMax: 100, oralMax: 0 },
+];
+
+function getSubjectConfig(subjectName: string) {
+  const normalized = subjectName.toLowerCase().trim();
+  return SUBJECT_CONFIG.find(s => 
+    s.full.toLowerCase() === normalized || 
+    s.abbrev.toLowerCase() === normalized
+  );
 }
 
-/**
- * Get remark based on percentage - matching Cambridge Court format EXACTLY
- */
+function getGradeForMark(mark: number): string {
+  if (mark >= 91) return 'A1';
+  if (mark >= 81) return 'A2';
+  if (mark >= 71) return 'B1';
+  if (mark >= 61) return 'B2';
+  if (mark >= 51) return 'C1';
+  if (mark >= 41) return 'C2';
+  if (mark >= 33) return 'D';
+  if (mark >= 21) return 'E1';
+  return 'E2';
+}
+
 function getRemarkFromPercentage(percentage: number): string {
   if (percentage >= 85) return 'Excellent';
   if (percentage >= 70) return 'Very Good';
@@ -70,35 +57,23 @@ function getRemarkFromPercentage(percentage: number): string {
   return 'Needs to work hard';
 }
 
-/**
- * Check if subject has grouped marks (Theory + Oral) or single mark
- */
-function hasGroupedMarks(data: AssessmentData, subject: string): boolean {
-  const student = data.students.find(s => s.subjectMarksDetail?.[subject]);
-  if (!student?.subjectMarksDetail?.[subject]) return false;
-  
-  const detail = student.subjectMarksDetail[subject];
-  // Has grouped marks if internal/oral is > 0
-  return detail.internal !== undefined && detail.internal > 0;
-}
-
 export function exportToExcel(data: AssessmentData) {
   const wb = XLSX.utils.book_new();
 
   // =============================================================
-  // BUILD HEADER ROWS - Match Cambridge Court format EXACTLY
+  // BUILD HEADER ROW - EXACT MATCH TO REFERENCE SHEET
   // =============================================================
   
   const headerRows: any[][] = [];
   
-  // Row 1: School name + Consolidated MarkSheet title (merged)
+  // Row 1: School name + title (merged)
   const examTitle = data.examName || 'Half Yearly';
   const academicYear = data.academicYear || `${new Date().getFullYear()}-${(new Date().getFullYear() + 1).toString().slice(-2)}`;
   headerRows.push([
-    `${data.schoolName || 'Cambridge Court High School'}\nConsolidated MarkSheet of Class : ${data.className || 'VI'} Section ${data.section || 'C'} Exam : ${examTitle} (${academicYear})`
+    `${data.schoolName || 'School'}\nConsolidated MarkSheet of Class : ${data.className || 'VI'} Section ${data.section || 'C'} Exam : ${examTitle} (${academicYear})`
   ]);
   
-  // Row 2: Column headers - EXACT match to reference sheet
+  // Row 2: Column headers - EXACT ORDER FROM SCHEMA
   const columnHeaders: string[] = [
     'Sr. No.',
     'Enrollment No.',
@@ -109,34 +84,38 @@ export function exportToExcel(data: AssessmentData) {
     'Gender',
   ];
   
-  // Track subject column info for data row building
-  interface SubjectColumnInfo {
+  // Track subject columns for data rows
+  interface SubjectColInfo {
     subject: string;
     abbrev: string;
-    hasGrouped: boolean;
+    theoryMax: number;
+    oralMax: number;
+    isGrouped: boolean;
   }
-  const subjectColumns: SubjectColumnInfo[] = [];
+  const subjectColumns: SubjectColInfo[] = [];
   
-  // Add subject groups in exact order
-  // Format: Subject Th (80), Subject Or (20), Total of Subject 100
+  // Add subject columns in exact order matching reference sheet
   data.selectedSubjects.forEach(subject => {
-    const abbrev = getSubjectAbbreviation(subject);
-    const hasGrouped = hasGroupedMarks(data, subject);
+    const config = getSubjectConfig(subject);
+    const abbrev = config?.abbrev || subject.substring(0, 4);
+    const theoryMax = config?.theoryMax || 80;
+    const oralMax = config?.oralMax || 20;
+    const isGrouped = oralMax > 0;
     
-    subjectColumns.push({ subject, abbrev, hasGrouped });
+    subjectColumns.push({ subject, abbrev, theoryMax, oralMax, isGrouped });
     
-    if (hasGrouped) {
-      // Grouped subject: Theory (80), Oral (20), Total (100)
-      columnHeaders.push(`${abbrev}\nTh (80)`);
-      columnHeaders.push(`${abbrev}\nOr (20)`);
-      columnHeaders.push(`Total of\n${abbrev} 100`);
+    if (isGrouped) {
+      // Grouped: Theory (80), Oral (20), Total (100)
+      columnHeaders.push(`${abbrev} Th (${theoryMax})`);
+      columnHeaders.push(`${abbrev} Or (${oralMax})`);
+      columnHeaders.push(`Total of ${abbrev} 100`);
     } else {
-      // Single subject like Draw, H&PE, VDMATVS: Subject Th (100)
-      columnHeaders.push(`${abbrev}\nTh (100)`);
+      // Single: Theory only (100)
+      columnHeaders.push(`${abbrev} Th (${theoryMax})`);
     }
   });
   
-  // Add final columns - EXACT order from reference sheet
+  // Final columns - EXACT ORDER
   columnHeaders.push('Max Grand Total');
   columnHeaders.push('Grand Total Obtained');
   columnHeaders.push('% Marks');
@@ -147,7 +126,7 @@ export function exportToExcel(data: AssessmentData) {
   headerRows.push(columnHeaders);
 
   // =============================================================
-  // BUILD STUDENT DATA ROWS - Preserve blanks exactly
+  // BUILD STUDENT DATA ROWS - PRESERVE BLANKS
   // =============================================================
   
   const studentRows = data.students
@@ -164,65 +143,64 @@ export function exportToExcel(data: AssessmentData) {
         student.gender || '',
       ];
       
-      // Add subject marks - preserve blanks exactly
       let grandTotal = 0;
       let maxTotal = 0;
-      let validSubjectCount = 0;
       
-      subjectColumns.forEach(({ subject, hasGrouped }) => {
+      // Add subject marks - preserve blanks
+      subjectColumns.forEach(({ subject, isGrouped }) => {
         const detail = student.subjectMarksDetail?.[subject];
-        const simpleMark = student.subjectMarks?.[subject];
         
-        if (hasGrouped && detail) {
-          // Theory mark - preserve blank as empty string
-          if (detail.theory !== undefined && detail.theory !== null && detail.theory !== 0) {
-            row.push(detail.theory);
-          } else if (detail.theory === 0) {
+        if (isGrouped) {
+          // Theory mark
+          const theory = detail?.theory;
+          if (theory !== undefined && theory !== null && theory > 0) {
+            row.push(theory);
+          } else if (theory === 0) {
             row.push(0);
           } else {
-            row.push(''); // Blank
+            row.push(''); // Blank preserved
           }
           
-          // Oral/Internal mark - preserve blank as empty string
-          if (detail.internal !== undefined && detail.internal !== null && detail.internal !== 0) {
-            row.push(detail.internal);
-          } else if (detail.internal === 0) {
+          // Oral mark
+          const oral = detail?.internal;
+          if (oral !== undefined && oral !== null && oral > 0) {
+            row.push(oral);
+          } else if (oral === 0) {
             row.push(0);
           } else {
-            row.push(''); // Blank
+            row.push(''); // Blank preserved
           }
           
           // Total with grade format: "B2 (69 )"
-          if (detail.total !== null && detail.total !== undefined && detail.total > 0) {
-            const grade = getGradeForMark(detail.total);
-            row.push(`${grade} (${detail.total} )`);
-            grandTotal += detail.total;
+          const total = detail?.total;
+          if (total !== null && total !== undefined && total > 0) {
+            const grade = getGradeForMark(total);
+            row.push(`${grade} (${total} )`);
+            grandTotal += total;
             maxTotal += 100;
-            validSubjectCount++;
-          } else if (detail.total === 0) {
+          } else if (total === 0) {
             row.push('E2 (0 )');
           } else {
-            row.push(''); // Blank
+            row.push(''); // Blank preserved
           }
         } else {
           // Single column subject
-          const mark = detail?.total ?? detail?.theory ?? simpleMark;
+          const total = detail?.total ?? detail?.theory ?? student.subjectMarks?.[subject];
           
-          if (mark !== null && mark !== undefined && mark > 0) {
-            const grade = getGradeForMark(mark);
-            row.push(`${grade} (${mark} )`);
-            grandTotal += mark;
+          if (total !== null && total !== undefined && total > 0) {
+            const grade = getGradeForMark(total);
+            row.push(`${grade} (${total} )`);
+            grandTotal += total;
             maxTotal += 100;
-            validSubjectCount++;
-          } else if (mark === 0) {
+          } else if (total === 0) {
             row.push('E2 (0 )');
           } else {
-            row.push(''); // Preserve blank
+            row.push(''); // Blank preserved
           }
         }
       });
       
-      // Max Grand Total - from imported data or calculated
+      // Max Grand Total - from import or calculated
       const maxGrandTotal = student.maxGrandTotal || maxTotal;
       row.push(maxGrandTotal > 0 ? maxGrandTotal : '');
       
@@ -230,16 +208,16 @@ export function exportToExcel(data: AssessmentData) {
       const grandTotalObtained = student.grandTotal || grandTotal;
       row.push(grandTotalObtained > 0 ? grandTotalObtained : '');
       
-      // Percentage - format: "70.14%"
+      // % Marks - format: "70.14%"
       const percentage = maxGrandTotal > 0 
         ? Math.round((grandTotalObtained / maxGrandTotal) * 100 * 100) / 100 
         : student.percentage;
       row.push(percentage > 0 ? `${percentage.toFixed(2)}%` : '');
       
-      // Remarks - use AI remark or generated based on percentage
+      // Remarks
       row.push(student.remark || getRemarkFromPercentage(percentage));
       
-      // Grade - from imported data or calculated
+      // Grade
       row.push(student.grade || getGradeFromPercentage(percentage));
       
       // Attendance - format: "96 / 102"
@@ -273,11 +251,11 @@ export function exportToExcel(data: AssessmentData) {
   ];
   
   // Subject columns
-  subjectColumns.forEach(({ hasGrouped }) => {
-    if (hasGrouped) {
-      colWidths.push({ wch: 10 }); // Theory
-      colWidths.push({ wch: 10 }); // Oral
-      colWidths.push({ wch: 14 }); // Total
+  subjectColumns.forEach(({ isGrouped }) => {
+    if (isGrouped) {
+      colWidths.push({ wch: 12 }); // Theory
+      colWidths.push({ wch: 12 }); // Oral
+      colWidths.push({ wch: 16 }); // Total
     } else {
       colWidths.push({ wch: 14 }); // Single subject
     }
@@ -293,37 +271,19 @@ export function exportToExcel(data: AssessmentData) {
   
   ws['!cols'] = colWidths;
 
-  // Merge title row across all columns
-  const totalCols = columnHeaders.length;
+  // Merge title row
   ws['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: columnHeaders.length - 1 } },
   ];
 
-  // Add worksheet to workbook
   XLSX.utils.book_append_sheet(wb, ws, 'Consolidated MarkSheet');
 
-  // Generate filename matching reference - format: VI-C_NAMEWISE.xlsx
+  // Filename format: VI-C_NAMEWISE.xlsx
   const classInfo = data.className || 'VI';
   const sectionInfo = data.section || 'C';
   const filename = `${classInfo}-${sectionInfo}_NAMEWISE.xlsx`;
   
-  // Download file
   XLSX.writeFile(wb, filename);
-}
-
-/**
- * Get grade letter for mark (Cambridge Court format)
- */
-function getGradeForMark(mark: number): string {
-  if (mark >= 91) return 'A1';
-  if (mark >= 81) return 'A2';
-  if (mark >= 71) return 'B1';
-  if (mark >= 61) return 'B2';
-  if (mark >= 51) return 'C1';
-  if (mark >= 41) return 'C2';
-  if (mark >= 33) return 'D';
-  if (mark >= 21) return 'E1';
-  return 'E2';
 }
 
 /**

@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Student, getGradeFromPercentage, Term, SubjectMarksDetail } from '@/types/assessment';
+import { Student, getGradeFromPercentage, Term } from '@/types/assessment';
 
 interface ExportOptions {
   student: Student & { classPosition: number };
@@ -14,11 +14,17 @@ interface ExportOptions {
 }
 
 /**
- * Export an individual student's report card as a FIXED 2-PAGE PDF
+ * =============================================================
+ * INDIVIDUAL STUDENT PDF - FIXED 2-PAGE REPORT
+ * =============================================================
  * 
- * PAGE 1: Student details + Complete marks table
- * PAGE 2: AI-generated review + Teacher remarks
+ * PAGE 1: Student details (Sr. No. → Gender) + Complete marks table
+ * PAGE 2: AI-generated review + Remarks + Grade + Attendance
+ * 
+ * EXACT HEADERS USED:
+ * Sr. No. | Enrollment No. | Name | Father Name | Mother Name | DOB | Gender
  */
+
 export async function exportStudentPDF({
   student,
   selectedSubjects,
@@ -89,26 +95,26 @@ export async function exportStudentPDF({
   addLine();
 
   // ===========================
-  // STUDENT INFORMATION SECTION - Match reference sheet headings
+  // STUDENT INFORMATION - EXACT HEADERS FROM SCHEMA
   // ===========================
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(0, 0, 0);
 
-  // Calculate attendance string - format: "96 / 102 (94%)"
+  // Attendance format: "96 / 102 (94%)"
   const attendanceStr = student.attendanceTotal > 0 
     ? `${student.attendancePresent} / ${student.attendanceTotal} (${Math.round((student.attendancePresent / student.attendanceTotal) * 100)}%)`
     : '-';
 
-  // Student details in grid layout - matching reference sheet columns
+  // Student details grid - EXACT header names from schema
   const detailRows = [
-    ['Name:', student.name, 'Enrollment No:', student.enrollmentNumber || '-'],
-    ['Sr. No.:', String(student.serialNo), 'Class:', `${className || '-'} - ${section || '-'}`],
+    ['Sr. No.:', String(student.serialNo), 'Enrollment No.:', student.enrollmentNumber || '-'],
+    ['Name:', student.name, 'Class:', `${className || '-'} - ${section || '-'}`],
     ['Father Name:', student.fatherName || '-', 'Mother Name:', student.motherName || '-'],
     ['DOB:', student.dob || '-', 'Gender:', student.gender || '-'],
-    ['Class Position:', `${student.classPosition} / ${totalStudents}`, 'Attendance:', attendanceStr],
-    ['Grade:', student.grade || getGradeFromPercentage(student.percentage), 'Term:', term],
+    ['Grade:', student.grade || getGradeFromPercentage(student.percentage), 'Attendance:', attendanceStr],
+    ['Class Position:', `${student.classPosition} / ${totalStudents}`, 'Term:', term],
   ];
 
   const leftCol = margin;

@@ -69,26 +69,30 @@ export function AssessmentTable({
         <table className="assessment-table">
           <thead>
             <tr>
-              <th className="w-12 text-center sticky left-0 bg-background z-10">S.No</th>
-              <th className="w-20 text-center">Roll</th>
-              <th className="w-24 text-center">Enrollment</th>
-              <th className="min-w-[150px] sticky left-12 bg-background z-10">Student Name</th>
-              <th className="w-20 text-center">Att.</th>
+              {/* EXACT HEADERS FROM SCHEMA - NON-NEGOTIABLE */}
+              <th className="w-12 text-center sticky left-0 bg-background z-10">Sr. No.</th>
+              <th className="w-24 text-center">Enrollment No.</th>
+              <th className="min-w-[150px] sticky left-12 bg-background z-10">Name</th>
+              <th className="w-32 text-center">Father Name</th>
+              <th className="w-32 text-center">Mother Name</th>
+              <th className="w-24 text-center">DOB</th>
+              <th className="w-16 text-center">Gender</th>
               {selectedSubjects.map(subject => (
-                <th key={subject} className={`text-center ${showDetailedMarks ? 'min-w-[160px]' : 'min-w-[90px]'}`}>
+                <th key={subject} className={`text-center ${showDetailedMarks ? 'min-w-[180px]' : 'min-w-[90px]'}`}>
                   <div className="flex flex-col items-center">
                     <span>{subject.length > 12 ? subject.substring(0, 10) + '...' : subject}</span>
                     {showDetailedMarks && (
-                      <span className="text-xs text-muted-foreground font-normal">(Th+IA=100)</span>
+                      <span className="text-xs text-muted-foreground font-normal">(Th+Or=100)</span>
                     )}
                   </div>
                 </th>
               ))}
-              <th className="w-24 text-center">Total</th>
-              <th className="w-20 text-center">%</th>
-              <th className="w-16 text-center">Rank</th>
-              <th className="w-16 text-center">Mood</th>
+              <th className="w-28 text-center">Max Grand Total</th>
+              <th className="w-32 text-center">Grand Total Obtained</th>
+              <th className="w-20 text-center">% Marks</th>
               <th className="min-w-[400px]">Remarks</th>
+              <th className="w-16 text-center">Grade</th>
+              <th className="w-24 text-center">Attendance</th>
               <th className="w-28 text-center">Actions</th>
             </tr>
           </thead>
