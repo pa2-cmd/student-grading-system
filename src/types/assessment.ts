@@ -95,6 +95,9 @@ export interface Student {
   subjectMarksDetail: Record<string, SubjectMarksDetail>; // Detailed marks (Theory/Oral/Total)
   subjectRatings: Record<string, SkillRating>;
   
+  // NA subjects (e.g., French) - excluded from calculations
+  naSubjects?: string[];
+  
   // Term-wise data storage
   termData: Record<Term, {
     subjectMarksDetail: Record<string, SubjectMarksDetail>;

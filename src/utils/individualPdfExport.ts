@@ -108,12 +108,18 @@ export async function exportStudentPDF({
     : '-';
 
   // Student details grid - EXACT header names from schema
+  // Use EXACT % Marks and Grade from sheet - DO NOT recalculate
+  const displayPercentage = student.percentage !== undefined && student.percentage !== null 
+    ? `${student.percentage}%` 
+    : '-';
+  const displayGrade = student.grade || '-';
+
   const detailRows = [
     ['Sr. No.:', String(student.serialNo), 'Enrollment No.:', student.enrollmentNumber || '-'],
     ['Name:', student.name, 'Class:', `${className || '-'} - ${section || '-'}`],
     ['Father Name:', student.fatherName || '-', 'Mother Name:', student.motherName || '-'],
     ['DOB:', student.dob || '-', 'Gender:', student.gender || '-'],
-    ['Grade:', student.grade || getGradeFromPercentage(student.percentage), 'Attendance:', attendanceStr],
+    ['Grade:', displayGrade, 'Attendance:', attendanceStr], // Use EXACT grade from sheet
     ['Class Position:', `${student.classPosition} / ${totalStudents}`, 'Term:', term],
   ];
 
@@ -150,25 +156,50 @@ export async function exportStudentPDF({
   yPos += 7;
 
   // Calculate totals - only count subjects with actual marks
+  // EXCLUDE NA subjects (e.g., French) from calculations
   let totalMarks = 0;
   let maxMarks = 0;
   let subjectsWithMarks = 0;
+  const naSubjects = new Set(student.naSubjects || []);
 
-  // Helper to get mark display - preserve blanks
-  const getMarkDisplay = (mark: number | null | undefined): string => {
+  // Helper to get mark display - preserve blanks, show NA as "NA"
+  const getMarkDisplay = (mark: number | null | undefined, isNA: boolean = false): string => {
+    if (isNA) return 'NA';
     if (mark === undefined || mark === null) return '-';
     if (mark === 0) return '0'; // Show actual zero
     return mark.toString();
+  };
+
+  // Check if a subject is NA
+  const isSubjectNA = (subject: string): boolean => {
+    const normalizedSubject = subject.toLowerCase();
+    return naSubjects.has(subject) || 
+           Array.from(naSubjects).some(na => na.toLowerCase() === normalizedSubject) ||
+           normalizedSubject.includes('french') && naSubjects.size > 0;
   };
 
   // Prepare table data - preserve subject order EXACTLY from selectedSubjects
   const tableBody = selectedSubjects.map((subject, index) => {
     const detail = student.subjectMarksDetail?.[subject];
     const simpleMark = student.subjectMarks?.[subject];
+    const subjectIsNA = isSubjectNA(subject);
     
     let theoryMark: number | null = null;
     let internalMark: number | null = null;
     let totalMark: number | null = null;
+    
+    if (subjectIsNA) {
+      // Subject is NA - show as NA, exclude from totals
+      return [
+        (index + 1).toString(),
+        subject,
+        'NA',
+        'NA',
+        'NA',
+        '100',
+        'NA'
+      ];
+    }
     
     if (detail) {
       theoryMark = detail.theory ?? null;
@@ -199,15 +230,21 @@ export async function exportStudentPDF({
     ];
   });
 
-  // Add total row
+  // Add total row - use EXACT values from sheet
+  // Use imported grandTotal and maxGrandTotal if available
+  const displayTotal = student.grandTotal || (subjectsWithMarks > 0 ? totalMarks : 0);
+  const displayMax = student.maxGrandTotal || (subjectsWithMarks > 0 ? maxMarks : 0);
+  // Use EXACT grade from sheet, NOT calculated
+  const finalGrade = student.grade || (subjectsWithMarks > 0 ? getGradeFromPercentage(student.percentage) : '-');
+  
   tableBody.push([
     '',
     'TOTAL',
     '',
     '',
-    subjectsWithMarks > 0 ? totalMarks.toString() : '-',
-    subjectsWithMarks > 0 ? maxMarks.toString() : '-',
-    subjectsWithMarks > 0 ? getGradeFromPercentage(student.percentage) : '-'
+    displayTotal > 0 ? displayTotal.toString() : '-',
+    displayMax > 0 ? displayMax.toString() : '-',
+    finalGrade
   ]);
 
   autoTable(doc, {
@@ -259,12 +296,12 @@ export async function exportStudentPDF({
   doc.text('Performance Summary', margin, yPos);
   yPos += 7;
 
-  // Summary boxes
+  // Summary boxes - Use EXACT % and Grade from sheet
   const boxWidth = (pageWidth - margin * 2 - 15) / 4;
   const boxHeight = 25;
   const boxes = [
-    { label: 'Percentage', value: `${student.percentage}%` },
-    { label: 'Grade', value: getGradeFromPercentage(student.percentage) },
+    { label: 'Percentage', value: displayPercentage }, // EXACT from sheet
+    { label: 'Grade', value: displayGrade }, // EXACT from sheet
     { label: 'Class Rank', value: `#${student.classPosition}` },
     { label: 'Subjects', value: selectedSubjects.length.toString() },
   ];

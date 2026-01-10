@@ -14,7 +14,7 @@ export interface ImportedStudent {
   className?: string;
   section?: string;
   // Subject marks in grouped format (Theory, Oral/Internal, Total)
-  subjectMarksDetail?: Record<string, { theory: number | null; oral: number | null; total: number | null }>;
+  subjectMarksDetail?: Record<string, { theory: number | null; oral: number | null; total: number | null; isNA?: boolean }>;
   // Simple subject marks (backward compatibility)
   subjectMarks?: Record<string, number | null>;
   attendancePresent?: number;
@@ -27,6 +27,8 @@ export interface ImportedStudent {
   remarks?: string;
   // Store original raw headers for exact export
   rawHeaders?: string[];
+  // Track NA subjects (e.g., French) for exclusion from calculations
+  naSubjects?: string[];
 }
 
 export interface DetectedSubjectGroup {
@@ -258,8 +260,17 @@ function findHeaderRow(jsonData: any[][], maxRows: number = 20): number {
 
 function isEmptyCell(value: any): boolean {
   if (value === undefined || value === null) return true;
-  const str = String(value).trim();
+  const str = String(value).trim().toUpperCase();
   return str === '' || str === '-' || str === 'N/A' || str === 'NA' || str === '—';
+}
+
+/**
+ * Check if a cell contains NA (Not Applicable) - used for French subject
+ */
+function isNAValue(value: any): boolean {
+  if (value === undefined || value === null) return false;
+  const str = String(value).trim().toUpperCase();
+  return str === 'NA' || str === 'N/A';
 }
 
 /**
@@ -371,7 +382,13 @@ function parseAttendance(value: any): { present: number; total: number; percenta
 
 /**
  * Parse marks that may include grade like "B2 (69)"
+ * Returns { value: number | null, isNA: boolean }
  */
+interface ParsedMark {
+  value: number | null;
+  isNA: boolean;
+}
+
 function parseMarks(value: any): number | null {
   if (isEmptyCell(value)) {
     return null; // Preserve blanks
@@ -391,12 +408,46 @@ function parseMarks(value: any): number | null {
     return parseFloat(numMatch[1]);
   }
   
-  // "NA" or similar
-  if (str.toUpperCase() === 'NA') {
+  // "NA" or similar - return null (will be handled as blank)
+  if (str.toUpperCase() === 'NA' || str.toUpperCase() === 'N/A') {
     return null;
   }
   
   return null;
+}
+
+/**
+ * Parse marks with NA detection - used for subjects like French
+ */
+function parseMarksWithNA(value: any): ParsedMark {
+  if (value === undefined || value === null) {
+    return { value: null, isNA: false };
+  }
+  
+  const str = String(value).trim();
+  
+  // Check if explicitly NA
+  if (str.toUpperCase() === 'NA' || str.toUpperCase() === 'N/A') {
+    return { value: null, isNA: true };
+  }
+  
+  if (str === '' || str === '-' || str === '—') {
+    return { value: null, isNA: false };
+  }
+  
+  // Pattern: "B2 (69)" - extract number from parentheses
+  const gradeMatch = str.match(/\((\d+)\s*\)/);
+  if (gradeMatch) {
+    return { value: parseInt(gradeMatch[1]), isNA: false };
+  }
+  
+  // Simple number
+  const numMatch = str.match(/^(\d+(?:\.\d+)?)$/);
+  if (numMatch) {
+    return { value: parseFloat(numMatch[1]), isNA: false };
+  }
+  
+  return { value: null, isNA: false };
 }
 
 /**
@@ -544,21 +595,38 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
           const dob = dobCol ? String(row[dobCol.index] || '').trim() : undefined;
           const gender = genderCol ? String(row[genderCol.index] || '').trim() : undefined;
           
-          // --- Subject Marks (grouped format) ---
-          const subjectMarksDetail: Record<string, { theory: number; oral: number; total: number }> = {};
-          const subjectMarks: Record<string, number> = {};
+        // --- Subject Marks (grouped format) ---
+          // Track which subjects are NA (e.g., French)
+          const subjectMarksDetail: Record<string, { theory: number | null; oral: number | null; total: number | null; isNA?: boolean }> = {};
+          const subjectMarks: Record<string, number | null> = {};
+          const naSubjects: Set<string> = new Set();
           
           subjectGroups.forEach(group => {
-            const theory = group.theoryCol !== undefined ? parseMarks(row[group.theoryCol]) : null;
-            const oral = group.oralCol !== undefined ? parseMarks(row[group.oralCol]) : null;
-            const total = group.totalCol !== undefined ? parseMarks(row[group.totalCol]) : null;
+            // Use NA-aware parsing
+            const theoryParsed = group.theoryCol !== undefined ? parseMarksWithNA(row[group.theoryCol]) : { value: null, isNA: false };
+            const oralParsed = group.oralCol !== undefined ? parseMarksWithNA(row[group.oralCol]) : { value: null, isNA: false };
+            const totalParsed = group.totalCol !== undefined ? parseMarksWithNA(row[group.totalCol]) : { value: null, isNA: false };
             
-            // Only add if we have at least some data
-            if (theory !== null || oral !== null || total !== null) {
+            // Check if this subject is NA (e.g., French marked as NA)
+            const isNA = theoryParsed.isNA || oralParsed.isNA || totalParsed.isNA;
+            
+            if (isNA) {
+              // Mark as NA - exclude from calculations
+              naSubjects.add(group.displayName);
               subjectMarksDetail[group.displayName] = {
-                theory: theory ?? 0,
-                oral: oral ?? 0,
-                total: total ?? (theory ?? 0) + (oral ?? 0)
+                theory: null,
+                oral: null,
+                total: null,
+                isNA: true
+              };
+              subjectMarks[group.displayName] = null;
+            } else if (theoryParsed.value !== null || oralParsed.value !== null || totalParsed.value !== null) {
+              // Has valid marks
+              subjectMarksDetail[group.displayName] = {
+                theory: theoryParsed.value,
+                oral: oralParsed.value,
+                total: totalParsed.value ?? ((theoryParsed.value ?? 0) + (oralParsed.value ?? 0)),
+                isNA: false
               };
               subjectMarks[group.displayName] = subjectMarksDetail[group.displayName].total;
             }
@@ -569,22 +637,25 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
             ? parseAttendance(row[attendanceCol.index])
             : { present: 0, total: 0, percentage: 0 };
           
-          // --- Grand Total & Percentage ---
-          const grandTotal = grandTotalCol ? parseMarks(row[grandTotalCol.index]) ?? 0 : 0;
-          const maxGrandTotal = maxGrandTotalCol ? parseMarks(row[maxGrandTotalCol.index]) ?? 0 : 0;
+          // --- Grand Total & Percentage (IMPORT DIRECTLY - DO NOT RECALCULATE) ---
+          const grandTotal = grandTotalCol ? parseMarks(row[grandTotalCol.index]) : null;
+          const maxGrandTotal = maxGrandTotalCol ? parseMarks(row[maxGrandTotalCol.index]) : null;
           
-          let percentageMarks = 0;
+          // Import % Marks EXACTLY as-is from sheet - DO NOT RECALCULATE
+          let percentageMarks: number | null = null;
           if (percentageCol) {
             const percStr = String(row[percentageCol.index] || '').trim();
-            const percMatch = percStr.match(/(\d+(?:\.\d+)?)\s*%?/);
-            if (percMatch) {
-              percentageMarks = parseFloat(percMatch[1]);
+            if (percStr && percStr !== '' && percStr !== '-') {
+              const percMatch = percStr.match(/(\d+(?:\.\d+)?)\s*%?/);
+              if (percMatch) {
+                percentageMarks = parseFloat(percMatch[1]);
+              }
             }
           }
           
-          // --- Grade & Remarks ---
-          const grade = gradeCol ? String(row[gradeCol.index] || '').trim() : undefined;
-          const remarks = remarksCol ? String(row[remarksCol.index] || '').trim() : undefined;
+          // --- Grade & Remarks (IMPORT DIRECTLY - DO NOT DERIVE) ---
+          const grade = gradeCol ? String(row[gradeCol.index] || '').trim() || undefined : undefined;
+          const remarks = remarksCol ? String(row[remarksCol.index] || '').trim() || undefined : undefined;
           
           students.push({
             serialNo,
@@ -600,11 +671,13 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
             attendancePresent: attendance.present,
             attendanceTotal: attendance.total,
             attendancePercentage: attendance.percentage,
-            grandTotal,
-            maxGrandTotal,
-            percentageMarks,
+            grandTotal: grandTotal ?? undefined,
+            maxGrandTotal: maxGrandTotal ?? undefined,
+            percentageMarks: percentageMarks ?? undefined,
             grade,
             remarks,
+            // Track NA subjects for exclusion from calculations
+            naSubjects: naSubjects.size > 0 ? Array.from(naSubjects) : undefined,
           });
         }
         
@@ -685,6 +758,10 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
 /**
  * Convert ImportedStudent array to Student objects for the app
  * Preserves ALL fields exactly as imported from reference sheet
+ * 
+ * IMPORTANT:
+ * - French (NA) is excluded from calculations
+ * - % Marks and Grade are imported EXACTLY from sheet - NOT recalculated
  */
 export function createStudentsFromImport(
   imported: ImportedStudent[], 
@@ -697,11 +774,33 @@ export function createStudentsFromImport(
       const subjectMarksDetail: Record<string, SubjectMarksDetail> = {};
       const subjectRatings: Record<string, 'Excellent' | 'Good' | 'Average' | 'Needs Improvement'> = {};
       
+      // Track NA subjects (e.g., French)
+      const naSubjects = new Set(imp.naSubjects || []);
+      
       // Use imported marks directly
       selectedSubjects.forEach(subject => {
+        // Check if this subject is marked as NA (e.g., French)
+        const normalizedSubject = subject.toLowerCase();
+        const isSubjectNA = naSubjects.has(subject) || 
+                           Array.from(naSubjects).some(na => na.toLowerCase() === normalizedSubject);
+        
+        if (isSubjectNA) {
+          // NA subject - mark as empty but flag it
+          subjectMarksDetail[subject] = createEmptySubjectMarksDetail();
+          // Don't add to subjectMarks - will be excluded from totals
+          return;
+        }
+        
         // Check if we have detailed marks
         if (imp.subjectMarksDetail?.[subject]) {
           const detail = imp.subjectMarksDetail[subject];
+          
+          // Skip if this detail is marked as NA
+          if (detail.isNA) {
+            subjectMarksDetail[subject] = createEmptySubjectMarksDetail();
+            return;
+          }
+          
           subjectMarksDetail[subject] = {
             theory: detail.theory ?? 0,
             internal: detail.oral ?? 0,
@@ -718,12 +817,18 @@ export function createStudentsFromImport(
           };
         } else {
           // Check case-insensitive match
-          const normalizedSubject = subject.toLowerCase();
           let found = false;
           
           if (imp.subjectMarksDetail) {
             for (const [key, value] of Object.entries(imp.subjectMarksDetail)) {
               if (key.toLowerCase() === normalizedSubject) {
+                // Skip if NA
+                if (value.isNA) {
+                  subjectMarksDetail[subject] = createEmptySubjectMarksDetail();
+                  found = true;
+                  break;
+                }
+                
                 subjectMarksDetail[subject] = {
                   theory: value.theory ?? 0,
                   internal: value.oral ?? 0,
@@ -753,7 +858,7 @@ export function createStudentsFromImport(
           }
         }
         
-        // Set ratings based on total marks
+        // Set ratings based on total marks (only for non-NA subjects with marks)
         const totalMark = subjectMarks[subject] || 0;
         if (totalMark >= 90) subjectRatings[subject] = 'Excellent';
         else if (totalMark >= 70) subjectRatings[subject] = 'Good';
@@ -761,11 +866,21 @@ export function createStudentsFromImport(
         else subjectRatings[subject] = 'Needs Improvement';
       });
       
-      // Calculate totals - only from subjects with valid marks
-      const validMarks = Object.values(subjectMarks).filter(m => m !== undefined && m > 0);
-      const totalMarks = validMarks.reduce((sum, m) => sum + m, 0);
-      const maxMarks = validMarks.length * 100;
-      const percentage = maxMarks > 0 ? Math.round((totalMarks / maxMarks) * 100) : (imp.percentageMarks || 0);
+      // Use EXACT values from sheet - DO NOT recalculate
+      // Only calculate if not present in sheet
+      const validMarks = Object.values(subjectMarks).filter(m => m !== undefined && m !== null && m > 0);
+      const calculatedTotal = validMarks.reduce((sum, m) => sum + m, 0);
+      const calculatedMax = validMarks.length * 100;
+      
+      // CRITICAL: Use sheet values FIRST, fallback to calculated
+      const grandTotal = imp.grandTotal ?? calculatedTotal;
+      const maxGrandTotal = imp.maxGrandTotal ?? calculatedMax;
+      
+      // % Marks: Use EXACTLY from sheet - DO NOT recalculate
+      const percentage = imp.percentageMarks ?? (calculatedMax > 0 ? Math.round((calculatedTotal / calculatedMax) * 100) : 0);
+      
+      // Grade: Use EXACTLY from sheet - DO NOT derive
+      const grade = imp.grade || '';
       
       // Create base student with required fields
       const baseStudent = createEmptyStudent(imp.serialNo, selectedSubjects);
@@ -784,16 +899,18 @@ export function createStudentsFromImport(
         subjectMarks,
         subjectMarksDetail,
         subjectRatings,
-        total: imp.grandTotal || totalMarks,
-        grandTotal: imp.grandTotal || totalMarks,
-        maxGrandTotal: imp.maxGrandTotal || maxMarks,
-        percentage: imp.percentageMarks || percentage,
-        grade: imp.grade || '',
+        total: grandTotal,
+        grandTotal: grandTotal,
+        maxGrandTotal: maxGrandTotal,
+        percentage: percentage, // EXACT from sheet
+        grade: grade, // EXACT from sheet
         attendancePresent: imp.attendancePresent || 0,
         attendanceTotal: imp.attendanceTotal || 0,
         attendancePercentage: imp.attendancePercentage || 0,
         remark: imp.remarks || '',
-        moodRating: getMoodFromPerformance(imp.percentageMarks || percentage),
+        moodRating: getMoodFromPerformance(percentage),
+        // Store NA subjects list for reference
+        naSubjects: imp.naSubjects,
       };
     });
 }
