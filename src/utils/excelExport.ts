@@ -126,7 +126,7 @@ export function exportToExcel(data: AssessmentData) {
   headerRows.push(columnHeaders);
 
   // =============================================================
-  // BUILD STUDENT DATA ROWS - PRESERVE BLANKS
+  // BUILD STUDENT DATA ROWS - PRESERVE BLANKS, HANDLE NA SUBJECTS
   // =============================================================
   
   const studentRows = data.students
@@ -143,12 +143,35 @@ export function exportToExcel(data: AssessmentData) {
         student.gender || '',
       ];
       
+      // Track NA subjects
+      const naSubjects = new Set(student.naSubjects || []);
+      
+      // Helper to check if subject is NA
+      const isSubjectNA = (subject: string): boolean => {
+        const normalizedSubject = subject.toLowerCase();
+        return naSubjects.has(subject) || 
+               Array.from(naSubjects).some(na => na.toLowerCase() === normalizedSubject);
+      };
+      
       let grandTotal = 0;
       let maxTotal = 0;
       
-      // Add subject marks - preserve blanks
+      // Add subject marks - preserve blanks, handle NA subjects
       subjectColumns.forEach(({ subject, isGrouped }) => {
         const detail = student.subjectMarksDetail?.[subject];
+        const subjectIsNA = isSubjectNA(subject);
+        
+        if (subjectIsNA) {
+          // Subject is NA - show as NA, exclude from totals
+          if (isGrouped) {
+            row.push('NA'); // Theory
+            row.push('NA'); // Oral
+            row.push('NA'); // Total
+          } else {
+            row.push('NA'); // Single subject
+          }
+          return; // Don't add to totals
+        }
         
         if (isGrouped) {
           // Theory mark
@@ -200,25 +223,31 @@ export function exportToExcel(data: AssessmentData) {
         }
       });
       
-      // Max Grand Total - from import or calculated
+      // Max Grand Total - use EXACT value from import, or calculated (excluding NA subjects)
       const maxGrandTotal = student.maxGrandTotal || maxTotal;
       row.push(maxGrandTotal > 0 ? maxGrandTotal : '');
       
-      // Grand Total Obtained
+      // Grand Total Obtained - use EXACT value from import
       const grandTotalObtained = student.grandTotal || grandTotal;
       row.push(grandTotalObtained > 0 ? grandTotalObtained : '');
       
-      // % Marks - format: "70.14%"
-      const percentage = maxGrandTotal > 0 
-        ? Math.round((grandTotalObtained / maxGrandTotal) * 100 * 100) / 100 
-        : student.percentage;
-      row.push(percentage > 0 ? `${percentage.toFixed(2)}%` : '');
+      // % Marks - USE EXACT VALUE FROM SHEET, DO NOT RECALCULATE
+      // Format: "70.14%"
+      if (student.percentage !== undefined && student.percentage !== null && student.percentage > 0) {
+        // If percentage is already a nice number, show with decimals
+        const percStr = Number.isInteger(student.percentage) 
+          ? `${student.percentage}.00%` 
+          : `${student.percentage.toFixed(2)}%`;
+        row.push(percStr);
+      } else {
+        row.push(''); // Blank if not present
+      }
       
-      // Remarks
-      row.push(student.remark || getRemarkFromPercentage(percentage));
+      // Remarks - use EXACT from sheet or generate
+      row.push(student.remark || getRemarkFromPercentage(student.percentage || 0));
       
-      // Grade
-      row.push(student.grade || getGradeFromPercentage(percentage));
+      // Grade - USE EXACT VALUE FROM SHEET, DO NOT DERIVE
+      row.push(student.grade || '');
       
       // Attendance - format: "96 / 102"
       if (student.attendancePresent && student.attendanceTotal) {
