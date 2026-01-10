@@ -10,8 +10,10 @@ interface SubjectDropdownProps {
 }
 
 /**
- * Non-repeating subject dropdown
- * Once a subject is selected in one column, it's removed from other dropdowns
+ * Non-repeating subject dropdown with Select.Item empty value crash fix
+ * - Never renders SelectItem with empty value
+ * - Uses internal non-empty IDs
+ * - Filters invalid values before rendering
  */
 export function SubjectDropdown({
   value,
@@ -25,13 +27,26 @@ export function SubjectDropdown({
     subject => !usedSubjects.includes(subject) || subject === value
   );
 
-  // Filter out any empty or invalid values
-  const validSubjects = availableSubjects.filter(s => s && s.trim() !== '');
+  // CRITICAL: Filter out any empty or invalid values - never render empty SelectItem
+  const validSubjects = availableSubjects.filter(s => 
+    s !== null && 
+    s !== undefined && 
+    typeof s === 'string' && 
+    s.trim() !== ''
+  );
+
+  // Initialize with undefined, not empty string
+  const selectValue = value && value.trim() !== '' ? value : undefined;
 
   return (
     <Select 
-      value={value || undefined} 
-      onValueChange={onChange} 
+      value={selectValue} 
+      onValueChange={(newValue) => {
+        // Only call onChange with valid non-empty values
+        if (newValue && newValue.trim() !== '') {
+          onChange(newValue);
+        }
+      }}
       disabled={disabled}
     >
       <SelectTrigger className="w-full min-w-[120px]">
@@ -44,7 +59,8 @@ export function SubjectDropdown({
           </div>
         ) : (
           validSubjects.map((subject) => (
-            <SelectItem key={subject} value={subject}>
+            // NEVER use empty value - use subject name as value
+            <SelectItem key={`subject-${subject}`} value={subject}>
               {subject}
             </SelectItem>
           ))

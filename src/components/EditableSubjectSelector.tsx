@@ -141,16 +141,18 @@ export function EditableSubjectSelector({ selectedSubjects, onUpdateSubjects }: 
               {availableSubjects.length > 0 && (
                 <div>
                   <p className="text-sm text-muted-foreground mb-2">Select from list:</p>
-                  <Select onValueChange={handleAddSubject}>
+                  <Select onValueChange={(val) => val && val.trim() !== '' && handleAddSubject(val)}>
                     <SelectTrigger>
                       <SelectValue placeholder="Choose a subject..." />
                     </SelectTrigger>
                     <SelectContent className="bg-popover border border-border z-50">
-                      {availableSubjects.map(subject => (
-                        <SelectItem key={subject} value={subject}>
-                          {subject}
-                        </SelectItem>
-                      ))}
+                      {availableSubjects
+                        .filter(s => s && s.trim() !== '')
+                        .map(subject => (
+                          <SelectItem key={`add-${subject}`} value={subject}>
+                            {subject}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
