@@ -1,4 +1,4 @@
-import { Student, SkillRating, MOOD_EMOJIS, SubjectMarksDetail, createEmptySubjectMarksDetail, Term, getGradeFromPercentage } from '@/types/assessment';
+import { Student, SkillRating, SubjectMarksDetail, createEmptySubjectMarksDetail, Term, getGradeFromPercentage } from '@/types/assessment';
 import { SkillSelect } from './SkillSelect';
 import { StudentPerformanceChart } from './StudentPerformanceChart';
 import { SubjectMarksInput } from './SubjectMarksInput';
@@ -112,53 +112,73 @@ export function StudentRow({
   return (
     <>
       <tr className="animate-fade-in hover:bg-muted/50 transition-colors">
-        {/* Serial Number - Read-only (sticky) */}
+        {/* Sr. No. - EXACT HEADER (sticky) */}
         <td className="text-center font-medium text-muted-foreground sticky left-0 bg-background z-10">
           {student.serialNo}
         </td>
         
-        {/* Roll Number - Separate from Enrollment */}
-        <td>
-          <Input
-            value={student.rollNumber || ''}
-            onChange={(e) => onUpdate({ rollNumber: e.target.value })}
-            placeholder="Roll"
-            className="input-field w-full min-w-[60px] text-center font-mono text-sm"
-          />
-        </td>
-        
-        {/* Enrollment Number - Separate from Roll */}
+        {/* Enrollment No. - EXACT HEADER */}
         <td>
           <Input
             value={student.enrollmentNumber || ''}
             onChange={(e) => onUpdate({ enrollmentNumber: e.target.value })}
-            placeholder="Enroll No"
-            className="input-field w-full min-w-[90px] text-center font-mono text-sm"
+            placeholder="Enrollment No."
+            className="input-field w-full min-w-[100px] text-center font-mono text-sm"
           />
         </td>
         
-        {/* Student Name (sticky) */}
+        {/* Name - EXACT HEADER (sticky) */}
         <td className="sticky left-12 bg-background z-10">
           <Input
             value={student.name}
             onChange={(e) => onUpdate({ name: e.target.value })}
-            placeholder="Enter student name"
+            placeholder="Name"
             className="input-field w-full min-w-[140px]"
           />
         </td>
         
-        {/* Attendance */}
-        <td className="text-center">
-          {student.attendanceTotal > 0 ? (
-            <Badge variant="outline" className="text-xs font-mono">
-              {student.attendancePresent}/{student.attendanceTotal}
-            </Badge>
-          ) : (
-            <span className="text-xs text-muted-foreground">-</span>
-          )}
+        {/* Father Name - EXACT HEADER */}
+        <td>
+          <Input
+            value={student.fatherName || ''}
+            onChange={(e) => onUpdate({ fatherName: e.target.value })}
+            placeholder="Father Name"
+            className="input-field w-full min-w-[120px] text-sm"
+          />
         </td>
         
-        {/* Subject Marks/Ratings */}
+        {/* Mother Name - EXACT HEADER */}
+        <td>
+          <Input
+            value={student.motherName || ''}
+            onChange={(e) => onUpdate({ motherName: e.target.value })}
+            placeholder="Mother Name"
+            className="input-field w-full min-w-[120px] text-sm"
+          />
+        </td>
+        
+        {/* DOB - EXACT HEADER */}
+        <td>
+          <Input
+            value={student.dob || ''}
+            onChange={(e) => onUpdate({ dob: e.target.value })}
+            placeholder="DOB"
+            className="input-field w-full min-w-[90px] text-center text-sm"
+          />
+        </td>
+        
+        {/* Gender - EXACT HEADER */}
+        <td>
+          <Input
+            value={student.gender || ''}
+            onChange={(e) => onUpdate({ gender: e.target.value })}
+            placeholder="M/F"
+            className="input-field w-full min-w-[50px] text-center text-sm"
+            maxLength={1}
+          />
+        </td>
+        
+        {/* Subject Marks - Th (80), Or (20), Total of Subject 100 */}
         {selectedSubjects.map(subject => (
           <td key={subject}>
             {showMarks ? (
@@ -189,31 +209,24 @@ export function StudentRow({
           </td>
         ))}
         
-        {/* Grand Total */}
+        {/* Max Grand Total - EXACT HEADER */}
+        <td className="text-center font-medium text-sm">
+          <span className="text-muted-foreground">{maxTotal}</span>
+        </td>
+
+        {/* Grand Total Obtained - EXACT HEADER */}
         <td className="text-center font-bold text-lg">
           <Badge variant="outline" className="text-base">
-            {grandTotal}/{maxTotal}
+            {grandTotal}
           </Badge>
         </td>
 
-        {/* Percentage */}
+        {/* % Marks - EXACT HEADER */}
         <td className={`text-center text-lg ${getPercentageClass()}`}>
           {percentage}%
         </td>
-
-        {/* Class Rank */}
-        <td className="text-center">
-          <Badge variant={classPosition <= 3 ? 'default' : 'secondary'} className="text-sm">
-            #{classPosition}
-          </Badge>
-        </td>
-
-        {/* Mood Emoji */}
-        <td className="text-center text-2xl">
-          {MOOD_EMOJIS[student.moodRating]}
-        </td>
         
-        {/* Remarks - Wider Column with wrapping */}
+        {/* Remarks - EXACT HEADER */}
         <td className="min-w-[400px] max-w-[500px]">
           <div className="flex items-start gap-2">
             <div className="flex-1">
@@ -222,7 +235,7 @@ export function StudentRow({
                   value={editedRemark}
                   onChange={(e) => setEditedRemark(e.target.value)}
                   className="min-h-[100px] text-sm resize-y"
-                  placeholder="Enter detailed remark..."
+                  placeholder="Enter remark..."
                 />
               ) : student.remark ? (
                 <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap break-words">{student.remark}</p>
@@ -274,6 +287,24 @@ export function StudentRow({
           </div>
         </td>
         
+        {/* Grade - EXACT HEADER */}
+        <td className="text-center">
+          <Badge variant={classPosition <= 3 ? 'default' : 'secondary'} className="text-sm font-bold">
+            {student.grade || getGradeFromPercentage(percentage)}
+          </Badge>
+        </td>
+
+        {/* Attendance - EXACT HEADER */}
+        <td className="text-center">
+          {student.attendanceTotal > 0 ? (
+            <Badge variant="outline" className="text-xs font-mono">
+              {student.attendancePresent} / {student.attendanceTotal}
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">-</span>
+          )}
+        </td>
+        
         {/* Actions */}
         <td className="text-center">
           <div className="flex items-center justify-center gap-1 flex-wrap">
@@ -322,7 +353,8 @@ export function StudentRow({
       {/* Expanded Details Row */}
       {isExpanded && (
         <tr className="bg-muted/30">
-          <td colSpan={selectedSubjects.length + 10} className="p-4">
+          {/* ColSpan: 7 base cols + subjects + 6 final cols + 1 actions = 14 + subjects */}
+          <td colSpan={selectedSubjects.length + 14} className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* Attendance */}
               <div className="space-y-2">
