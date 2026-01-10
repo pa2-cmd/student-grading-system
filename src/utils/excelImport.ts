@@ -107,10 +107,13 @@ const SERIAL_PATTERNS = [
 ];
 
 const NAME_PATTERNS = [
-  'name', 'student name', 'studentname', 'student', 'full name',
+  'student name', 'studentname', 'student', 'full name',
   "student's name", 'child name', 'learner name', 'pupil name',
   'scholar name', 'candidate name', 'name of student'
 ];
+
+// Patterns that should NOT match for student name (to avoid confusion with father/mother name)
+const NAME_EXCLUSION_PATTERNS = ['father', 'mother', 'guardian', 'parent'];
 
 const ENROLLMENT_PATTERNS = [
   'enrollment no', 'enrollment number', 'enrollment', 'enroll no',
@@ -195,19 +198,68 @@ function matchesPattern(normalizedHeader: string, patterns: string[]): boolean {
   return false;
 }
 
+/**
+ * Check if header matches pattern BUT should be excluded (e.g., "Father Name" should not match "Name")
+ */
+function matchesPatternWithExclusion(normalizedHeader: string, patterns: string[], exclusionPatterns: string[]): boolean {
+  // First check if any exclusion pattern is present
+  for (const exclusion of exclusionPatterns) {
+    if (normalizedHeader.includes(normalizeHeader(exclusion))) {
+      return false;
+    }
+  }
+  return matchesPattern(normalizedHeader, patterns);
+}
+
 function findColumnByPatterns(
   row: any[],
-  patterns: string[]
+  patterns: string[],
+  exclusionPatterns?: string[]
 ): { index: number; header: string } | null {
   for (let i = 0; i < row.length; i++) {
     const cellValue = String(row[i] || '').trim();
     if (!cellValue) continue;
     
     const normalized = normalizeHeader(cellValue);
-    if (matchesPattern(normalized, patterns)) {
-      return { index: i, header: cellValue };
+    
+    if (exclusionPatterns && exclusionPatterns.length > 0) {
+      if (matchesPatternWithExclusion(normalized, patterns, exclusionPatterns)) {
+        return { index: i, header: cellValue };
+      }
+    } else {
+      if (matchesPattern(normalized, patterns)) {
+        return { index: i, header: cellValue };
+      }
     }
   }
+  return null;
+}
+
+/**
+ * Find the Name column specifically - must handle "Name" header that could conflict with "Father Name"/"Mother Name"
+ */
+function findNameColumn(row: any[]): { index: number; header: string } | null {
+  // First try specific student name patterns
+  const specificResult = findColumnByPatterns(row, NAME_PATTERNS);
+  if (specificResult) return specificResult;
+  
+  // Then try generic "name" but exclude father/mother/guardian
+  for (let i = 0; i < row.length; i++) {
+    const cellValue = String(row[i] || '').trim();
+    if (!cellValue) continue;
+    
+    const normalized = normalizeHeader(cellValue);
+    
+    // Check if it's exactly "name" or contains "name" but NOT father/mother/guardian
+    if (normalized === 'name' || normalized.includes('name')) {
+      // Exclude if contains father, mother, or guardian
+      const isExcluded = NAME_EXCLUSION_PATTERNS.some(exc => normalized.includes(normalizeHeader(exc)));
+      if (!isExcluded) {
+        return { index: i, header: cellValue };
+      }
+    }
+  }
+  
   return null;
 }
 
@@ -217,7 +269,7 @@ function countKeyColumns(row: any[]): {
   hasEnrollment: boolean;
   hasSerial: boolean;
 } {
-  const hasName = findColumnByPatterns(row, NAME_PATTERNS) !== null;
+  const hasName = findNameColumn(row) !== null;
   const hasEnrollment = findColumnByPatterns(row, ENROLLMENT_PATTERNS) !== null;
   const hasSerial = findColumnByPatterns(row, SERIAL_PATTERNS) !== null;
   
@@ -500,7 +552,7 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
         // =============================================================
         
         const serialCol = findColumnByPatterns(headerRow, SERIAL_PATTERNS);
-        const nameCol = findColumnByPatterns(headerRow, NAME_PATTERNS);
+        const nameCol = findNameColumn(headerRow);
         const enrollmentCol = findColumnByPatterns(headerRow, ENROLLMENT_PATTERNS);
         const fatherNameCol = findColumnByPatterns(headerRow, FATHER_NAME_PATTERNS);
         const motherNameCol = findColumnByPatterns(headerRow, MOTHER_NAME_PATTERNS);
