@@ -1,106 +1,269 @@
 import * as XLSX from 'xlsx';
-import { AssessmentData, getGradeFromPercentage } from '@/types/assessment';
+import { AssessmentData, getGradeFromPercentage, SubjectMarksDetail } from '@/types/assessment';
 
 /**
- * Export to Excel in VI Award List format
- * Matches the original VI AWARD LIST 25-26 structure
+ * Export to Excel in EXACT Cambridge Court Marksheet format
+ * Matches the reference sheet structure exactly:
+ * - Same headings (character-by-character)
+ * - Same column order
+ * - Same grouping
+ * - Blank cells preserved as blank
  */
 export function exportToExcel(data: AssessmentData) {
   const wb = XLSX.utils.book_new();
 
-  // Build header rows matching VI Award List format
+  // =============================================================
+  // BUILD HEADER ROWS - Match Cambridge Court format exactly
+  // =============================================================
+  
   const headerRows: any[][] = [];
   
-  // Row 1: School name (merged across all columns)
-  headerRows.push([data.schoolName || 'School Name']);
-  
-  // Row 2: Award list title with academic year
-  headerRows.push([`VI AWARD LIST ${data.academicYear}`]);
-  
-  // Row 3: Class and section info
+  // Row 1: School name + Consolidated MarkSheet title (merged)
+  const examTitle = data.examName || 'Half Yearly';
+  const academicYear = data.academicYear || `${new Date().getFullYear()}-${(new Date().getFullYear() + 1).toString().slice(-2)}`;
   headerRows.push([
-    `Class: ${data.className || ''}${data.section ? ' - ' + data.section : ''}`,
-    '',
-    '',
-    `Total Students: ${data.totalStrength || data.students.filter(s => s.name.trim()).length}`,
-    '',
-    `Date: ${new Date().toLocaleDateString('en-IN')}`
+    `${data.schoolName || 'Cambridge Court High School'}\nConsolidated MarkSheet of Class : ${data.className || 'VI'} Section ${data.section || 'C'} Exam : ${examTitle} (${academicYear})`
   ]);
   
-  // Row 4: Empty row for spacing
-  headerRows.push([]);
-  
-  // Row 5: Column headers
-  const columnHeaders = [
-    'S.No',
-    'Student Name',
-    'Enrollment No',
-    ...data.selectedSubjects,
-    'Total',
-    'Percentage',
-    'Grade',
-    'Remarks'
+  // Row 2: Column headers - EXACT match to reference sheet
+  const columnHeaders: string[] = [
+    'Sr. No.',
+    'Enrollment No.',
+    'Name',
+    'Father Name',
+    'Mother Name',
+    'DOB',
+    'Gender',
   ];
+  
+  // Add subject groups in exact order
+  // Format: Subject Th (80), Subject Or (20), Total of Subject 100
+  data.selectedSubjects.forEach(subject => {
+    const abbrev = getSubjectAbbreviation(subject);
+    
+    // Check if subject has grouped marks or single marks
+    const firstStudent = data.students.find(s => s.subjectMarksDetail?.[subject]);
+    const hasDetailedMarks = firstStudent?.subjectMarksDetail?.[subject]?.internal !== undefined 
+      && firstStudent?.subjectMarksDetail?.[subject]?.internal !== 0;
+    
+    if (hasDetailedMarks) {
+      // Grouped subject: Theory (80), Oral (20), Total (100)
+      columnHeaders.push(`${abbrev}\nTh (80)`);
+      columnHeaders.push(`${abbrev}\nOr (20)`);
+      columnHeaders.push(`Total of\n${abbrev} 100`);
+    } else {
+      // Single subject like Draw, H&PE, VDMATVS: Subject Th (100)
+      columnHeaders.push(`${abbrev}\nTh (100)`);
+    }
+  });
+  
+  // Add final columns
+  columnHeaders.push('Max Grand Total');
+  columnHeaders.push('Grand Total Obtained');
+  columnHeaders.push('% Marks');
+  columnHeaders.push('Remarks');
+  columnHeaders.push('Grade');
+  columnHeaders.push('Attendance');
+  
   headerRows.push(columnHeaders);
 
-  // Build student data rows
+  // =============================================================
+  // BUILD STUDENT DATA ROWS
+  // =============================================================
+  
   const studentRows = data.students
     .filter(s => s.name.trim())
     .sort((a, b) => a.serialNo - b.serialNo)
     .map((student) => {
-      // Calculate total marks
-      const subjectMarks = data.selectedSubjects.map(subject => 
-        student.subjectMarks?.[subject] ?? 0
-      );
-      const totalMarks = subjectMarks.reduce((a, b) => a + b, 0);
-      const maxTotal = data.selectedSubjects.length * 100;
-      const percentage = maxTotal > 0 ? Math.round((totalMarks / maxTotal) * 100) : 0;
-      
-      return [
+      const row: any[] = [
         student.serialNo,
-        student.name,
         student.enrollmentNumber || '',
-        ...subjectMarks,
-        totalMarks,
-        `${percentage}%`,
-        getGradeFromPercentage(percentage),
-        student.remark || '',
+        student.name,
+        '', // Father Name - not stored currently
+        '', // Mother Name - not stored currently
+        '', // DOB - not stored currently
+        '', // Gender - not stored currently
       ];
+      
+      // Add subject marks - preserve blanks exactly
+      let grandTotal = 0;
+      let maxTotal = 0;
+      
+      data.selectedSubjects.forEach(subject => {
+        const detail = student.subjectMarksDetail?.[subject];
+        const simpleMark = student.subjectMarks?.[subject];
+        
+        // Check if this subject has detailed marks
+        const hasDetailedMarks = detail?.internal !== undefined && detail?.internal !== 0;
+        
+        if (hasDetailedMarks && detail) {
+          // Theory mark - preserve blank
+          row.push(detail.theory ?? '');
+          // Oral/Internal mark - preserve blank
+          row.push(detail.internal ?? '');
+          // Total with grade format: "B2 (69)"
+          if (detail.total !== null && detail.total !== undefined) {
+            const grade = getGradeFromPercentage(detail.total);
+            row.push(`${grade} (${detail.total} )`);
+            grandTotal += detail.total;
+            maxTotal += 100;
+          } else {
+            row.push('');
+          }
+        } else {
+          // Single column subject
+          const mark = detail?.total ?? detail?.theory ?? simpleMark;
+          if (mark !== null && mark !== undefined && mark !== 0) {
+            const grade = getGradeFromPercentage(mark);
+            row.push(`${grade} (${mark} )`);
+            grandTotal += mark;
+            maxTotal += 100;
+          } else if (mark === 0) {
+            row.push('E2 (0 )');
+          } else {
+            row.push(''); // Preserve blank
+          }
+        }
+      });
+      
+      // Max Grand Total
+      row.push(maxTotal > 0 ? maxTotal : '');
+      
+      // Grand Total Obtained
+      row.push(grandTotal);
+      
+      // Percentage
+      const percentage = maxTotal > 0 ? Math.round((grandTotal / maxTotal) * 100 * 100) / 100 : 0;
+      row.push(percentage > 0 ? `${percentage.toFixed(2)}%` : '');
+      
+      // Remarks
+      row.push(student.remark || getRemarkFromPercentage(percentage));
+      
+      // Grade
+      row.push(getGradeFromPercentage(percentage));
+      
+      // Attendance - format: "96 / 102"
+      if (student.attendancePresent && student.attendanceTotal) {
+        row.push(`${student.attendancePresent} / ${student.attendanceTotal}`);
+      } else {
+        row.push('');
+      }
+      
+      return row;
     });
 
   // Combine all rows
   const allRows = [...headerRows, ...studentRows];
   const ws = XLSX.utils.aoa_to_sheet(allRows);
 
-  // Set column widths
-  const totalCols = columnHeaders.length;
-  ws['!cols'] = [
-    { wch: 6 },   // S.No
-    { wch: 25 },  // Student Name
-    { wch: 15 },  // Enrollment No
-    ...data.selectedSubjects.map(() => ({ wch: 12 })),  // Subject columns
-    { wch: 8 },   // Total
-    { wch: 10 },  // Percentage
-    { wch: 8 },   // Grade
-    { wch: 50 },  // Remarks
+  // =============================================================
+  // SET COLUMN WIDTHS
+  // =============================================================
+  
+  const colWidths: { wch: number }[] = [
+    { wch: 8 },   // Sr. No.
+    { wch: 18 },  // Enrollment No.
+    { wch: 22 },  // Name
+    { wch: 20 },  // Father Name
+    { wch: 20 },  // Mother Name
+    { wch: 12 },  // DOB
+    { wch: 8 },   // Gender
   ];
+  
+  // Subject columns
+  data.selectedSubjects.forEach(subject => {
+    const firstStudent = data.students.find(s => s.subjectMarksDetail?.[subject]);
+    const hasDetailedMarks = firstStudent?.subjectMarksDetail?.[subject]?.internal !== undefined 
+      && firstStudent?.subjectMarksDetail?.[subject]?.internal !== 0;
+    
+    if (hasDetailedMarks) {
+      colWidths.push({ wch: 10 }); // Theory
+      colWidths.push({ wch: 10 }); // Oral
+      colWidths.push({ wch: 14 }); // Total
+    } else {
+      colWidths.push({ wch: 14 }); // Single subject
+    }
+  });
+  
+  // Final columns
+  colWidths.push({ wch: 14 }); // Max Grand Total
+  colWidths.push({ wch: 14 }); // Grand Total Obtained
+  colWidths.push({ wch: 10 }); // % Marks
+  colWidths.push({ wch: 20 }); // Remarks
+  colWidths.push({ wch: 8 });  // Grade
+  colWidths.push({ wch: 12 }); // Attendance
+  
+  ws['!cols'] = colWidths;
 
-  // Merge cells for title rows
+  // Merge title row across all columns
+  const totalCols = columnHeaders.length;
   ws['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },  // School name
-    { s: { r: 1, c: 0 }, e: { r: 1, c: totalCols - 1 } },  // Award list title
+    { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
   ];
 
   // Add worksheet to workbook
-  XLSX.utils.book_append_sheet(wb, ws, 'VI Award List');
+  XLSX.utils.book_append_sheet(wb, ws, 'Consolidated MarkSheet');
 
-  // Generate filename
-  const className = data.className || 'Class';
-  const year = data.academicYear || new Date().getFullYear();
-  const filename = `VI_AWARD_LIST_${className}_${year}.xlsx`;
+  // Generate filename matching reference
+  const classInfo = data.className || 'VI';
+  const sectionInfo = data.section || 'C';
+  const filename = `${classInfo}-${sectionInfo}_NAMEWISE.xlsx`;
   
   // Download file
   XLSX.writeFile(wb, filename);
+}
+
+/**
+ * Get subject abbreviation matching Cambridge Court format
+ */
+function getSubjectAbbreviation(subject: string): string {
+  const abbrevMap: Record<string, string> = {
+    'Mathematics': 'Mths',
+    'Maths': 'Mths',
+    'English': 'Eng',
+    'Hindi': 'Hin',
+    'Science': 'Sc',
+    'Social Studies': 'Ssc',
+    'Social Science': 'Ssc',
+    'Sanskrit': 'Sans',
+    'Computer Science': 'Comp',
+    'Computer': 'Comp',
+    'French': 'Fr',
+    'Drawing': 'Draw',
+    'Art': 'Draw',
+    'Health & PE': 'H&PE',
+    'Health & Physical Education': 'H&PE',
+    'Physical Education': 'H&PE',
+    'Value Education': 'VDMATVS',
+    'Moral Science': 'VDMATVS',
+    'General Knowledge': 'GK',
+    'Environmental Studies': 'EVS',
+    'Music': 'Music',
+  };
+  
+  // Check for direct match first
+  if (abbrevMap[subject]) return abbrevMap[subject];
+  
+  // Try case-insensitive match
+  const lowerSubject = subject.toLowerCase();
+  for (const [key, value] of Object.entries(abbrevMap)) {
+    if (key.toLowerCase() === lowerSubject) return value;
+  }
+  
+  // Return first 4 characters as abbreviation
+  return subject.substring(0, 4);
+}
+
+/**
+ * Get remark based on percentage - matching Cambridge Court format
+ */
+function getRemarkFromPercentage(percentage: number): string {
+  if (percentage >= 85) return 'Excellent';
+  if (percentage >= 70) return 'Very Good';
+  if (percentage >= 60) return 'Good';
+  if (percentage >= 50) return 'Satisfactory';
+  if (percentage >= 40) return 'Fair';
+  return 'Needs to work hard';
 }
 
 /**
@@ -128,11 +291,19 @@ export function exportSummaryReport(data: AssessmentData) {
   
   // Subject-wise stats
   data.selectedSubjects.forEach(subject => {
-    const marks = validStudents.map(s => s.subjectMarks?.[subject] || 0);
-    const avg = Math.round(marks.reduce((a, b) => a + b, 0) / marks.length);
-    const highest = Math.max(...marks);
-    const lowest = Math.min(...marks);
-    summaryRows.push([subject, `${avg}%`, `${highest}%`, `${lowest}%`]);
+    const marks = validStudents.map(s => {
+      const detail = s.subjectMarksDetail?.[subject];
+      return detail?.total ?? s.subjectMarks?.[subject] ?? 0;
+    }).filter(m => m > 0);
+    
+    if (marks.length > 0) {
+      const avg = Math.round(marks.reduce((a, b) => a + b, 0) / marks.length);
+      const highest = Math.max(...marks);
+      const lowest = Math.min(...marks);
+      summaryRows.push([subject, `${avg}%`, `${highest}%`, `${lowest}%`]);
+    } else {
+      summaryRows.push([subject, 'N/A', 'N/A', 'N/A']);
+    }
   });
   
   summaryRows.push([]);

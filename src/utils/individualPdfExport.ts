@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Student, getGradeFromPercentage, Term } from '@/types/assessment';
+import { Student, getGradeFromPercentage, Term, SubjectMarksDetail } from '@/types/assessment';
 
 interface ExportOptions {
   student: Student & { classPosition: number };
@@ -14,7 +14,10 @@ interface ExportOptions {
 }
 
 /**
- * Export an individual student's report card as PDF
+ * Export an individual student's report card as a FIXED 2-PAGE PDF
+ * 
+ * PAGE 1: Student details + Complete marks table
+ * PAGE 2: AI-generated review + Teacher remarks
  */
 export async function exportStudentPDF({
   student,
@@ -49,11 +52,23 @@ export async function exportStudentPDF({
     yPos += 5;
   };
 
+  const addPageFooter = (pageNum: number) => {
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(100, 100, 100);
+    doc.text(
+      `Page ${pageNum} of 2 | Generated on ${new Date().toLocaleString()}`,
+      pageWidth / 2,
+      pageHeight - 10,
+      { align: 'center' }
+    );
+  };
+
   // ===========================
-  // HEADER
+  // PAGE 1: STUDENT DETAILS + MARKS TABLE
   // ===========================
   
-  // School Name
+  // School Name Header
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(41, 98, 255);
@@ -74,20 +89,22 @@ export async function exportStudentPDF({
   addLine();
 
   // ===========================
-  // STUDENT INFO
+  // STUDENT INFORMATION SECTION
   // ===========================
   
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(11);
   doc.setTextColor(0, 0, 0);
 
+  // Calculate attendance string
   const attendanceStr = student.attendanceTotal > 0 
-    ? `${student.attendancePresent}/${student.attendanceTotal} (${Math.round((student.attendancePresent / student.attendanceTotal) * 100)}%)`
+    ? `${student.attendancePresent} / ${student.attendanceTotal} (${Math.round((student.attendancePresent / student.attendanceTotal) * 100)}%)`
     : '-';
 
+  // Student details in 2-column layout
   const infoRows = [
     ['Student Name:', student.name, 'Class:', `${className || '-'} - ${section || '-'}`],
-    ['Roll Number:', student.rollNumber || '-', 'Enrollment No:', student.enrollmentNumber || '-'],
+    ['Roll Number:', student.rollNumber || String(student.serialNo), 'Enrollment No:', student.enrollmentNumber || '-'],
     ['Class Position:', `${student.classPosition} / ${totalStudents}`, 'Attendance:', attendanceStr],
     ['Grade:', getGradeFromPercentage(student.percentage), 'Term:', term],
   ];
@@ -115,7 +132,7 @@ export async function exportStudentPDF({
   addLine();
 
   // ===========================
-  // MARKS TABLE
+  // SUBJECT-WISE MARKS TABLE
   // ===========================
   
   doc.setFont('helvetica', 'bold');
@@ -128,22 +145,46 @@ export async function exportStudentPDF({
   let maxMarks = 0;
   let subjectsWithMarks = 0;
 
-  // Prepare table data - preserve subject order from selectedSubjects
+  // Helper to get mark display - preserve blanks
+  const getMarkDisplay = (mark: number | null | undefined): string => {
+    if (mark === undefined || mark === null) return '-';
+    if (mark === 0) return '0'; // Show actual zero
+    return mark.toString();
+  };
+
+  // Prepare table data - preserve subject order EXACTLY from selectedSubjects
   const tableBody = selectedSubjects.map((subject, index) => {
-    const marks = student.subjectMarks?.[subject];
-    const hasMarks = marks !== undefined && marks !== null && marks > 0;
+    const detail = student.subjectMarksDetail?.[subject];
+    const simpleMark = student.subjectMarks?.[subject];
     
-    if (hasMarks) {
-      totalMarks += marks;
+    let theoryMark: number | null = null;
+    let internalMark: number | null = null;
+    let totalMark: number | null = null;
+    
+    if (detail) {
+      theoryMark = detail.theory ?? null;
+      internalMark = detail.internal ?? null;
+      totalMark = detail.total ?? null;
+    } else if (simpleMark !== undefined && simpleMark !== null) {
+      totalMark = simpleMark;
+    }
+    
+    const hasValidMark = totalMark !== null && totalMark > 0;
+    
+    if (hasValidMark) {
+      totalMarks += totalMark!;
       maxMarks += 100;
       subjectsWithMarks++;
     }
     
-    const grade = hasMarks ? getGradeFromPercentage(marks) : '-';
+    const grade = hasValidMark ? getGradeFromPercentage(totalMark!) : '-';
+    
     return [
       (index + 1).toString(),
       subject,
-      hasMarks ? marks.toString() : '-', // Display blank as '-' not zero
+      getMarkDisplay(theoryMark),
+      getMarkDisplay(internalMark),
+      getMarkDisplay(totalMark), // Blank marks shown as '-'
       '100',
       grade
     ];
@@ -153,6 +194,8 @@ export async function exportStudentPDF({
   tableBody.push([
     '',
     'TOTAL',
+    '',
+    '',
     subjectsWithMarks > 0 ? totalMarks.toString() : '-',
     subjectsWithMarks > 0 ? maxMarks.toString() : '-',
     subjectsWithMarks > 0 ? getGradeFromPercentage(student.percentage) : '-'
@@ -160,12 +203,12 @@ export async function exportStudentPDF({
 
   autoTable(doc, {
     startY: yPos,
-    head: [['S.No', 'Subject', 'Marks Obtained', 'Max Marks', 'Grade']],
+    head: [['S.No', 'Subject', 'Theory', 'Internal', 'Total', 'Max', 'Grade']],
     body: tableBody,
     margin: { left: margin, right: margin },
     styles: {
-      fontSize: 10,
-      cellPadding: 3,
+      fontSize: 9,
+      cellPadding: 2.5,
     },
     headStyles: {
       fillColor: [41, 98, 255],
@@ -177,11 +220,13 @@ export async function exportStudentPDF({
       halign: 'center',
     },
     columnStyles: {
-      0: { cellWidth: 15 },
-      1: { halign: 'left', cellWidth: 60 },
-      2: { cellWidth: 35 },
-      3: { cellWidth: 30 },
-      4: { cellWidth: 25 },
+      0: { cellWidth: 12 },
+      1: { halign: 'left', cellWidth: 45 },
+      2: { cellWidth: 22 },
+      3: { cellWidth: 22 },
+      4: { cellWidth: 22 },
+      5: { cellWidth: 18 },
+      6: { cellWidth: 18 },
     },
     alternateRowStyles: {
       fillColor: [245, 247, 250],
@@ -196,11 +241,12 @@ export async function exportStudentPDF({
   yPos = (doc as any).lastAutoTable.finalY + 10;
 
   // ===========================
-  // PERFORMANCE SUMMARY
+  // PERFORMANCE SUMMARY BOXES
   // ===========================
   
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
+  doc.setTextColor(0, 0, 0);
   doc.text('Performance Summary', margin, yPos);
   yPos += 7;
 
@@ -235,87 +281,9 @@ export async function exportStudentPDF({
     doc.text(box.value, x + boxWidth / 2, yPos + 18, { align: 'center' });
   });
 
-  yPos += boxHeight + 15;
+  yPos += boxHeight + 10;
 
-  // ===========================
-  // REMARKS
-  // ===========================
-  
-  if (student.remark) {
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(0, 0, 0);
-    doc.text("Teacher's Remarks", margin, yPos);
-    yPos += 7;
-
-    // Remarks box
-    doc.setFillColor(252, 252, 255);
-    doc.setDrawColor(200, 210, 230);
-    
-    // Calculate text height
-    const remarkLines = doc.splitTextToSize(student.remark, pageWidth - margin * 2 - 10);
-    const remarkBoxHeight = Math.max(25, remarkLines.length * 5 + 10);
-    
-    doc.roundedRect(margin, yPos, pageWidth - margin * 2, remarkBoxHeight, 3, 3, 'FD');
-    
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(60, 60, 60);
-    doc.text(remarkLines, margin + 5, yPos + 7);
-    
-    yPos += remarkBoxHeight + 10;
-  }
-
-  // ===========================
-  // STRENGTHS & IMPROVEMENTS
-  // ===========================
-  
-  if ((student.strengths && student.strengths.length > 0) || 
-      (student.improvements && student.improvements.length > 0)) {
-    
-    const colWidth = (pageWidth - margin * 2 - 10) / 2;
-    
-    // Strengths
-    if (student.strengths && student.strengths.length > 0) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(34, 139, 34);
-      doc.text('Strengths', margin, yPos);
-      
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(60, 60, 60);
-      student.strengths.forEach((strength, i) => {
-        doc.text(`• ${strength}`, margin + 5, yPos + 6 + (i * 5));
-      });
-    }
-    
-    // Improvements
-    if (student.improvements && student.improvements.length > 0) {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(200, 100, 0);
-      doc.text('Areas for Improvement', margin + colWidth + 10, yPos);
-      
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(60, 60, 60);
-      student.improvements.forEach((imp, i) => {
-        doc.text(`• ${imp}`, margin + colWidth + 15, yPos + 6 + (i * 5));
-      });
-    }
-    
-    yPos += Math.max(
-      (student.strengths?.length || 0) * 5 + 15,
-      (student.improvements?.length || 0) * 5 + 15
-    );
-  }
-
-  // ===========================
-  // FOOTER
-  // ===========================
-  
-  // Signature lines at bottom
+  // Signature lines at bottom of page 1
   const signatureY = pageHeight - 35;
   
   doc.setDrawColor(150, 150, 150);
@@ -328,15 +296,176 @@ export async function exportStudentPDF({
   doc.text('Class Teacher', margin + 35, signatureY + 5, { align: 'center' });
   doc.text('Principal', pageWidth - margin - 35, signatureY + 5, { align: 'center' });
 
-  // Generation date
+  // Page 1 footer
+  addPageFooter(1);
+
+  // ===========================
+  // PAGE 2: AI REVIEW + TEACHER REMARKS
+  // ===========================
+  
+  doc.addPage();
+  yPos = margin;
+
+  // Page 2 Header
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(41, 98, 255);
+  centerText(schoolName || 'Student Report Card', yPos);
+  yPos += 7;
+
+  doc.setFontSize(11);
+  doc.setTextColor(100, 100, 100);
+  centerText(`${student.name} - ${term} Review`, yPos);
+  yPos += 10;
+
+  addLine();
+
+  // ===========================
+  // AI-GENERATED PERFORMANCE REVIEW
+  // ===========================
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(0, 0, 0);
+  doc.text('Performance Review', margin, yPos);
+  yPos += 8;
+
+  // Review box
+  doc.setFillColor(252, 252, 255);
+  doc.setDrawColor(200, 210, 230);
+  
+  // Use student remark or generate fallback
+  const reviewText = student.remark || generateFallbackReview(student, selectedSubjects);
+  const reviewLines = doc.splitTextToSize(reviewText, pageWidth - margin * 2 - 10);
+  const reviewBoxHeight = Math.max(45, reviewLines.length * 5 + 15);
+  
+  doc.roundedRect(margin, yPos, pageWidth - margin * 2, reviewBoxHeight, 3, 3, 'FD');
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.setTextColor(60, 60, 60);
+  doc.text(reviewLines, margin + 5, yPos + 8);
+  
+  yPos += reviewBoxHeight + 15;
+
+  // ===========================
+  // STRENGTHS & AREAS FOR IMPROVEMENT
+  // ===========================
+  
+  const colWidth = (pageWidth - margin * 2 - 10) / 2;
+  const strengthsY = yPos;
+  
+  // Strengths section
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(34, 139, 34);
+  doc.text('Strengths', margin, yPos);
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(60, 60, 60);
+  
+  const strengths = student.strengths?.length > 0 
+    ? student.strengths 
+    : ['Shows interest in learning', 'Regular attendance'];
+  
+  strengths.slice(0, 5).forEach((strength, i) => {
+    doc.text(`• ${strength}`, margin + 5, yPos + 7 + (i * 6));
+  });
+  
+  // Areas for Improvement section
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(200, 100, 0);
+  doc.text('Areas for Improvement', margin + colWidth + 10, strengthsY);
+  
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(60, 60, 60);
+  
+  const improvements = student.improvements?.length > 0 
+    ? student.improvements 
+    : ['Continue practicing regularly'];
+  
+  improvements.slice(0, 5).forEach((imp, i) => {
+    doc.text(`• ${imp}`, margin + colWidth + 15, strengthsY + 7 + (i * 6));
+  });
+
+  yPos += Math.max(strengths.length, improvements.length) * 6 + 20;
+
+  // ===========================
+  // TEACHER'S ADDITIONAL REMARKS
+  // ===========================
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(0, 0, 0);
+  doc.text("Teacher's Additional Remarks", margin, yPos);
+  yPos += 7;
+
+  // Empty remarks box for teacher to fill
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(180, 180, 180);
+  doc.setLineDashPattern([2, 2], 0);
+  doc.roundedRect(margin, yPos, pageWidth - margin * 2, 35, 3, 3, 'FD');
+  doc.setLineDashPattern([], 0);
+  
+  if (student.teacherNotes) {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(60, 60, 60);
+    const notesLines = doc.splitTextToSize(student.teacherNotes, pageWidth - margin * 2 - 10);
+    doc.text(notesLines, margin + 5, yPos + 8);
+  }
+  
+  yPos += 45;
+
+  // ===========================
+  // NEXT STEPS
+  // ===========================
+  
+  if (student.nextSteps?.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(41, 98, 255);
+    doc.text('Recommended Next Steps', margin, yPos);
+    yPos += 7;
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(60, 60, 60);
+    
+    student.nextSteps.slice(0, 4).forEach((step, i) => {
+      doc.text(`${i + 1}. ${step}`, margin + 5, yPos + (i * 6));
+    });
+    
+    yPos += student.nextSteps.length * 6 + 10;
+  }
+
+  // ===========================
+  // PAGE 2 SIGNATURES
+  // ===========================
+  
+  const sig2Y = pageHeight - 45;
+  
+  doc.setDrawColor(150, 150, 150);
+  doc.line(margin + 5, sig2Y, margin + 55, sig2Y);
+  doc.line(pageWidth / 2 - 25, sig2Y, pageWidth / 2 + 25, sig2Y);
+  doc.line(pageWidth - margin - 55, sig2Y, pageWidth - margin - 5, sig2Y);
+  
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.setFont('helvetica', 'italic');
-  doc.text(
-    `Generated on ${new Date().toLocaleString()}`,
-    pageWidth / 2,
-    pageHeight - 10,
-    { align: 'center' }
-  );
+  doc.setTextColor(100, 100, 100);
+  doc.text('Class Teacher', margin + 30, sig2Y + 5, { align: 'center' });
+  doc.text('Parent/Guardian', pageWidth / 2, sig2Y + 5, { align: 'center' });
+  doc.text('Principal', pageWidth - margin - 30, sig2Y + 5, { align: 'center' });
+
+  // Date line
+  doc.setFontSize(9);
+  doc.text(`Date: _______________`, margin, sig2Y + 15);
+
+  // Page 2 footer
+  addPageFooter(2);
 
   // ===========================
   // SAVE FILE
@@ -344,8 +473,8 @@ export async function exportStudentPDF({
   
   // Clean filename - format: {StudentName}_Roll-{Roll}_Enroll-{Enrollment}_Class-{Class}{Section}_Term-{Term}.pdf
   const cleanName = student.name.trim().replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '_');
-  const cleanRoll = (student.rollNumber || 'NA').replace(/[^a-zA-Z0-9]/g, '');
-  const cleanEnroll = (student.enrollmentNumber || 'NA').replace(/[^a-zA-Z0-9]/g, '');
+  const cleanRoll = (student.rollNumber || String(student.serialNo)).replace(/[^a-zA-Z0-9]/g, '');
+  const cleanEnroll = (student.enrollmentNumber || 'NA').replace(/[^a-zA-Z0-9-]/g, '');
   const cleanClass = (className || '').replace(/[^a-zA-Z0-9]/g, '');
   const cleanSection = (section || '').replace(/[^a-zA-Z0-9]/g, '');
   const cleanTerm = term.replace(/\s+/g, '');
@@ -353,4 +482,62 @@ export async function exportStudentPDF({
   const fileName = `${cleanName}_Roll-${cleanRoll}_Enroll-${cleanEnroll}_Class-${cleanClass}${cleanSection}_${cleanTerm}.pdf`;
   
   doc.save(fileName);
+}
+
+/**
+ * Generate a safe fallback review if AI generation fails
+ */
+function generateFallbackReview(student: Student, selectedSubjects: string[]): string {
+  const name = student.name.split(' ')[0];
+  const percentage = student.percentage || 0;
+  
+  let performance = 'satisfactory';
+  if (percentage >= 85) performance = 'excellent';
+  else if (percentage >= 70) performance = 'very good';
+  else if (percentage >= 60) performance = 'good';
+  else if (percentage >= 45) performance = 'satisfactory';
+  else performance = 'needs improvement';
+  
+  return `${name} has shown ${performance} performance this term with an overall score of ${percentage}%. ` +
+    `The student demonstrates commitment to learning and participates actively in class activities. ` +
+    `With continued effort and regular practice, there is potential for further improvement. ` +
+    `Parents are encouraged to support the student's learning journey at home. ` +
+    `Keep up the good work and stay focused on your goals!`;
+}
+
+/**
+ * Bulk export all students as individual PDFs
+ */
+export async function exportAllStudentsPDF(options: {
+  students: Student[];
+  selectedSubjects: string[];
+  schoolName: string;
+  examName?: string;
+  className: string;
+  section: string;
+  term?: Term;
+}): Promise<void> {
+  const { students, selectedSubjects, schoolName, examName, className, section, term } = options;
+  
+  const validStudents = students.filter(s => s.name.trim());
+  const sortedStudents = [...validStudents].sort((a, b) => b.percentage - a.percentage);
+  
+  for (let i = 0; i < sortedStudents.length; i++) {
+    const student = sortedStudents[i];
+    const position = i + 1;
+    
+    await exportStudentPDF({
+      student: { ...student, classPosition: position },
+      selectedSubjects,
+      schoolName,
+      examName,
+      className,
+      section,
+      term,
+      totalStudents: validStudents.length,
+    });
+    
+    // Small delay between downloads
+    await new Promise(resolve => setTimeout(resolve, 300));
+  }
 }
