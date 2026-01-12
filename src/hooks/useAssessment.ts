@@ -16,15 +16,28 @@ import {
   getMoodFromPerformance,
   recalculateStudentTotals
 } from '@/types/assessment';
+import { encryptData, decryptData, isEncrypted, migrateToEncrypted } from '@/utils/storage';
 
 const STORAGE_KEY = 'grading-tool-data';
 
 export function useAssessment() {
   const [data, setData] = useState<AssessmentData>(() => {
+    // Migrate any existing unencrypted data to encrypted format
+    migrateToEncrypted(STORAGE_KEY);
+    
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
+        // Try to decrypt if encrypted, otherwise parse directly (for migration)
+        let parsed: unknown;
+        if (isEncrypted(saved)) {
+          parsed = decryptData<AssessmentData>(saved);
+          if (!parsed) {
+            return getDefaultAssessmentData();
+          }
+        } else {
+          parsed = JSON.parse(saved);
+        }
         return migrateData(parsed);
       } catch {
         return getDefaultAssessmentData();
@@ -33,9 +46,10 @@ export function useAssessment() {
     return getDefaultAssessmentData();
   });
 
-  // Auto-save to localStorage
+  // Auto-save to localStorage with encryption
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const encrypted = encryptData(data);
+    localStorage.setItem(STORAGE_KEY, encrypted);
   }, [data]);
 
   const updateSchoolInfo = useCallback((field: string, value: string | number) => {
