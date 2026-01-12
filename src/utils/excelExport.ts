@@ -7,7 +7,7 @@ import { AssessmentData, getGradeFromPercentage } from '@/types/assessment';
  * =============================================================
  * 
  * EXACT HEADERS (NON-NEGOTIABLE):
- * Sr. No. | Enrollment No. | Name | Father Name | Mother Name | DOB | Gender |
+ * Sr. No. | Enrollment No. | Name | Gender |
  * [Subject groups: Mths Th (80), Mths Or (20), Total of Mths 100, ...] |
  * Draw Th (100) | H&PE Th (100) | VDMATVS Th (100) |
  * Max Grand Total | Grand Total Obtained | % Marks | Remarks | Grade | Attendance
@@ -78,9 +78,6 @@ export function exportToExcel(data: AssessmentData) {
     'Sr. No.',
     'Enrollment No.',
     'Name',
-    'Father Name',
-    'Mother Name',
-    'DOB',
     'Gender',
   ];
   
@@ -137,9 +134,6 @@ export function exportToExcel(data: AssessmentData) {
         student.serialNo,
         student.enrollmentNumber || '',
         student.name,
-        student.fatherName || '',
-        student.motherName || '',
-        student.dob || '',
         student.gender || '',
       ];
       

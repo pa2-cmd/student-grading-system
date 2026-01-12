@@ -22,7 +22,7 @@ interface ExportOptions {
  * PAGE 2: AI-generated review + Remarks + Grade + Attendance
  * 
  * EXACT HEADERS USED:
- * Sr. No. | Enrollment No. | Name | Father Name | Mother Name | DOB | Gender
+ * Sr. No. | Enrollment No. | Name | Gender
  */
 
 export async function exportStudentPDF({
@@ -117,10 +117,9 @@ export async function exportStudentPDF({
   const detailRows = [
     ['Sr. No.:', String(student.serialNo), 'Enrollment No.:', student.enrollmentNumber || '-'],
     ['Name:', student.name, 'Class:', `${className || '-'} - ${section || '-'}`],
-    ['Father Name:', student.fatherName || '-', 'Mother Name:', student.motherName || '-'],
-    ['DOB:', student.dob || '-', 'Gender:', student.gender || '-'],
-    ['Grade:', displayGrade, 'Attendance:', attendanceStr], // Use EXACT grade from sheet
-    ['Class Position:', `${student.classPosition} / ${totalStudents}`, 'Term:', term],
+    ['Gender:', student.gender || '-', 'Attendance:', attendanceStr],
+    ['Grade:', displayGrade, 'Class Position:', `${student.classPosition} / ${totalStudents}`],
+    ['Term:', term, '% Marks:', displayPercentage],
   ];
 
   const leftCol = margin;
