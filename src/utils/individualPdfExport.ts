@@ -170,12 +170,17 @@ export async function exportStudentPDF({
     return mark.toString();
   };
 
-  // Check if a subject is NA
+  // Check if a subject is NA (case-insensitive check)
   const isSubjectNA = (subject: string): boolean => {
     const normalizedSubject = subject.toLowerCase();
-    return naSubjects.has(subject) || 
-           Array.from(naSubjects).some(na => na.toLowerCase() === normalizedSubject) ||
-           normalizedSubject.includes('french') && naSubjects.size > 0;
+    // Direct match
+    if (naSubjects.has(subject)) return true;
+    // Case-insensitive match
+    if (Array.from(naSubjects).some(na => na.toLowerCase() === normalizedSubject)) return true;
+    // Check if subjectMarksDetail has isNA flag
+    const detail = student.subjectMarksDetail?.[subject];
+    if (detail && 'isNA' in detail && (detail as any).isNA) return true;
+    return false;
   };
 
   // Prepare table data - preserve subject order EXACTLY from selectedSubjects
@@ -231,11 +236,11 @@ export async function exportStudentPDF({
   });
 
   // Add total row - use EXACT values from sheet
-  // Use imported grandTotal and maxGrandTotal if available
-  const displayTotal = student.grandTotal || (subjectsWithMarks > 0 ? totalMarks : 0);
-  const displayMax = student.maxGrandTotal || (subjectsWithMarks > 0 ? maxMarks : 0);
-  // Use EXACT grade from sheet, NOT calculated
-  const finalGrade = student.grade || (subjectsWithMarks > 0 ? getGradeFromPercentage(student.percentage) : '-');
+  // CRITICAL: Use sheet values FIRST - DO NOT recalculate
+  const displayTotal = student.grandTotal ?? (subjectsWithMarks > 0 ? totalMarks : 0);
+  const displayMax = student.maxGrandTotal ?? (subjectsWithMarks > 0 ? maxMarks : 0);
+  // Use EXACT grade from sheet - DO NOT derive or recalculate
+  const finalGrade = student.grade || '-';
   
   tableBody.push([
     '',
