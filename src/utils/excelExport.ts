@@ -146,11 +146,17 @@ export function exportToExcel(data: AssessmentData) {
       // Track NA subjects
       const naSubjects = new Set(student.naSubjects || []);
       
-      // Helper to check if subject is NA
+      // Helper to check if subject is NA (case-insensitive, also checks detail flag)
       const isSubjectNA = (subject: string): boolean => {
         const normalizedSubject = subject.toLowerCase();
-        return naSubjects.has(subject) || 
-               Array.from(naSubjects).some(na => na.toLowerCase() === normalizedSubject);
+        // Direct match
+        if (naSubjects.has(subject)) return true;
+        // Case-insensitive match
+        if (Array.from(naSubjects).some(na => na.toLowerCase() === normalizedSubject)) return true;
+        // Check if subjectMarksDetail has isNA flag
+        const detail = student.subjectMarksDetail?.[subject];
+        if (detail && 'isNA' in detail && (detail as any).isNA) return true;
+        return false;
       };
       
       let grandTotal = 0;
@@ -224,27 +230,31 @@ export function exportToExcel(data: AssessmentData) {
       });
       
       // Max Grand Total - use EXACT value from import, or calculated (excluding NA subjects)
-      const maxGrandTotal = student.maxGrandTotal || maxTotal;
+      const maxGrandTotal = student.maxGrandTotal ?? maxTotal;
       row.push(maxGrandTotal > 0 ? maxGrandTotal : '');
       
       // Grand Total Obtained - use EXACT value from import
-      const grandTotalObtained = student.grandTotal || grandTotal;
+      const grandTotalObtained = student.grandTotal ?? grandTotal;
       row.push(grandTotalObtained > 0 ? grandTotalObtained : '');
       
       // % Marks - USE EXACT VALUE FROM SHEET, DO NOT RECALCULATE
-      // Format: "70.14%"
-      if (student.percentage !== undefined && student.percentage !== null && student.percentage > 0) {
-        // If percentage is already a nice number, show with decimals
-        const percStr = Number.isInteger(student.percentage) 
-          ? `${student.percentage}.00%` 
-          : `${student.percentage.toFixed(2)}%`;
-        row.push(percStr);
+      // Preserve the exact format/value from import
+      if (student.percentage !== undefined && student.percentage !== null) {
+        if (student.percentage === 0) {
+          row.push('0%');
+        } else {
+          // Preserve original precision
+          const percStr = Number.isInteger(student.percentage) 
+            ? `${student.percentage}%` 
+            : `${student.percentage}%`;
+          row.push(percStr);
+        }
       } else {
         row.push(''); // Blank if not present
       }
       
-      // Remarks - use EXACT from sheet or generate
-      row.push(student.remark || getRemarkFromPercentage(student.percentage || 0));
+      // Remarks - use EXACT from sheet, fallback to empty (not auto-generated)
+      row.push(student.remark || '');
       
       // Grade - USE EXACT VALUE FROM SHEET, DO NOT DERIVE
       row.push(student.grade || '');
