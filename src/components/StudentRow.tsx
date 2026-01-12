@@ -137,36 +137,6 @@ export function StudentRow({
           />
         </td>
         
-        {/* Father Name - EXACT HEADER */}
-        <td>
-          <Input
-            value={student.fatherName || ''}
-            onChange={(e) => onUpdate({ fatherName: e.target.value })}
-            placeholder="Father Name"
-            className="input-field w-full min-w-[120px] text-sm"
-          />
-        </td>
-        
-        {/* Mother Name - EXACT HEADER */}
-        <td>
-          <Input
-            value={student.motherName || ''}
-            onChange={(e) => onUpdate({ motherName: e.target.value })}
-            placeholder="Mother Name"
-            className="input-field w-full min-w-[120px] text-sm"
-          />
-        </td>
-        
-        {/* DOB - EXACT HEADER */}
-        <td>
-          <Input
-            value={student.dob || ''}
-            onChange={(e) => onUpdate({ dob: e.target.value })}
-            placeholder="DOB"
-            className="input-field w-full min-w-[90px] text-center text-sm"
-          />
-        </td>
-        
         {/* Gender - EXACT HEADER */}
         <td>
           <Input
@@ -353,8 +323,8 @@ export function StudentRow({
       {/* Expanded Details Row */}
       {isExpanded && (
         <tr className="bg-muted/30">
-          {/* ColSpan: 7 base cols + subjects + 6 final cols + 1 actions = 14 + subjects */}
-          <td colSpan={selectedSubjects.length + 14} className="p-4">
+          {/* ColSpan: 4 base cols + subjects + 6 final cols + 1 actions = 11 + subjects */}
+          <td colSpan={selectedSubjects.length + 11} className="p-4">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               {/* Attendance */}
               <div className="space-y-2">

@@ -12,9 +12,6 @@ export const EXACT_HEADERS = [
   'Sr. No.',
   'Enrollment No.',
   'Name',
-  'Father Name',
-  'Mother Name',
-  'DOB',
   'Gender',
   // Subject columns follow dynamically
 ] as const;

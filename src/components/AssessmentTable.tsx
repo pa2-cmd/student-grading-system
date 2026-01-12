@@ -73,9 +73,6 @@ export function AssessmentTable({
               <th className="w-12 text-center sticky left-0 bg-background z-10">Sr. No.</th>
               <th className="w-24 text-center">Enrollment No.</th>
               <th className="min-w-[150px] sticky left-12 bg-background z-10">Name</th>
-              <th className="w-32 text-center">Father Name</th>
-              <th className="w-32 text-center">Mother Name</th>
-              <th className="w-24 text-center">DOB</th>
               <th className="w-16 text-center">Gender</th>
               {selectedSubjects.map(subject => (
                 <th key={subject} className={`text-center ${showDetailedMarks ? 'min-w-[180px]' : 'min-w-[90px]'}`}>
