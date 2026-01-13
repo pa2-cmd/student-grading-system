@@ -16,18 +16,7 @@ export function useAssessment() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        // Ensure selectedSubjects exists for backward compatibility
-        if (!parsed.selectedSubjects) {
-          parsed.selectedSubjects = [
-            'Speaking & Listening Skills',
-            'Writing Skills',
-            'Vocabulary',
-            'Grammar Usage',
-            'Reading Comprehension',
-          ];
-        }
-        return parsed;
+        return JSON.parse(saved);
       } catch {
         return getDefaultAssessmentData();
       }
@@ -51,33 +40,10 @@ export function useAssessment() {
     }));
   }, []);
 
-  const updateSelectedSubjects = useCallback((subjects: string[]) => {
-    setData(prev => {
-      // Update all existing students to have ratings for new subjects
-      const updatedStudents = prev.students.map(student => {
-        const newRatings: Record<string, SkillRating> = {};
-        subjects.forEach(subject => {
-          newRatings[subject] = student.subjectRatings[subject] || 'Good';
-        });
-        return {
-          ...student,
-          subjectRatings: newRatings,
-          total: calculateTotal(newRatings),
-        };
-      });
-      
-      return {
-        ...prev,
-        selectedSubjects: subjects,
-        students: updatedStudents,
-      };
-    });
-  }, []);
-
   const addStudent = useCallback(() => {
     setData(prev => ({
       ...prev,
-      students: [...prev.students, createEmptyStudent(prev.students.length + 1, prev.selectedSubjects)],
+      students: [...prev.students, createEmptyStudent(prev.students.length + 1)],
     }));
   }, []);
 
@@ -98,28 +64,12 @@ export function useAssessment() {
         
         const updated = { ...student, [field]: value };
         
-        // Recalculate total if subject ratings changed
-        if (field === 'subjectRatings') {
-          updated.total = calculateTotal(updated.subjectRatings);
+        // Recalculate total if a skill field changed
+        if (['speakingListening', 'writing', 'vocabulary', 'grammar', 'reading'].includes(field)) {
+          updated.total = calculateTotal(updated);
         }
         
         return updated;
-      }),
-    }));
-  }, []);
-
-  const updateSubjectRating = useCallback((studentId: string, subject: string, rating: SkillRating) => {
-    setData(prev => ({
-      ...prev,
-      students: prev.students.map(student => {
-        if (student.id !== studentId) return student;
-        
-        const newRatings = { ...student.subjectRatings, [subject]: rating };
-        return {
-          ...student,
-          subjectRatings: newRatings,
-          total: calculateTotal(newRatings),
-        };
       }),
     }));
   }, []);
@@ -132,13 +82,6 @@ export function useAssessment() {
           ? { ...student, remark, isGeneratingRemark: isGenerating }
           : student
       ),
-    }));
-  }, []);
-
-  const importStudents = useCallback((students: Student[]) => {
-    setData(prev => ({
-      ...prev,
-      students: students,
     }));
   }, []);
 
@@ -162,16 +105,6 @@ export function useAssessment() {
     reader.onload = (e) => {
       try {
         const imported = JSON.parse(e.target?.result as string);
-        // Ensure selectedSubjects exists
-        if (!imported.selectedSubjects) {
-          imported.selectedSubjects = [
-            'Speaking & Listening Skills',
-            'Writing Skills',
-            'Vocabulary',
-            'Grammar Usage',
-            'Reading Comprehension',
-          ];
-        }
         setData(imported);
       } catch (error) {
         console.error('Failed to import JSON:', error);
@@ -184,13 +117,10 @@ export function useAssessment() {
     data,
     updateSchoolInfo,
     toggleLanguage,
-    updateSelectedSubjects,
     addStudent,
     removeStudent,
     updateStudent,
-    updateSubjectRating,
     updateStudentRemark,
-    importStudents,
     resetAll,
     exportJSON,
     importJSON,
