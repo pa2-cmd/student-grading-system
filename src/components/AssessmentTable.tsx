@@ -33,7 +33,7 @@ export function AssessmentTable({
                 </th>
               ))}
               <th className="w-20 text-center">Total</th>
-              <th className="min-w-[280px]">AI Remarks</th>
+              <th className="min-w-[420px]">AI Remarks</th>
               <th className="w-16 text-center">Action</th>
             </tr>
           </thead>

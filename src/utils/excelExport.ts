@@ -46,7 +46,7 @@ export function exportToExcel(data: AssessmentData) {
   ws['!cols'] = [
     { wch: 6 }, { wch: 10 }, { wch: 25 },
     ...data.selectedSubjects.map(() => ({ wch: 18 })),
-    { wch: 10 }, { wch: 50 },
+    { wch: 10 }, { wch: 80 },
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, 'Assessment');

@@ -84,9 +84,9 @@ export function exportToPDF(data: AssessmentData): void {
     columnStyles: {
       0: { halign: 'center', cellWidth: 12 }, // S.No
       1: { halign: 'center', cellWidth: 18 }, // Roll No
-      2: { cellWidth: 35 }, // Name
+      2: { cellWidth: 32 }, // Name
       [headers.length - 2]: { halign: 'center', cellWidth: 15 }, // Total
-      [headers.length - 1]: { cellWidth: 50 }, // Remarks
+      [headers.length - 1]: { cellWidth: 80 }, // Remarks
     },
     alternateRowStyles: {
       fillColor: [245, 247, 250],

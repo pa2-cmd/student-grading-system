@@ -1,4 +1,4 @@
-import { Student, SKILL_VALUES } from '@/types/assessment';
+import { Student, SKILL_VALUES, getMaxPossibleScore } from '@/types/assessment';
 
 interface RemarkGeneratorParams {
   student: Student;
@@ -6,120 +6,66 @@ interface RemarkGeneratorParams {
   selectedSubjects: string[];
 }
 
-// Humanized phrase templates for warm, encouraging remarks
-const ENGLISH_PHRASES = {
-  excellent: [
-    "is truly blossoming",
-    "continues to shine brightly",
-    "brings wonderful energy",
-    "has made remarkable progress",
-    "demonstrates outstanding dedication",
-  ],
-  good: [
-    "is making steady progress",
-    "shows consistent effort",
-    "is developing beautifully",
-    "brings enthusiasm to learning",
-    "is on a wonderful journey",
-  ],
-  average: [
-    "is growing each day",
-    "shows promising potential",
-    "is building a strong foundation",
-    "continues to develop",
-    "is making meaningful strides",
-  ],
-  needsSupport: [
-    "is discovering their strengths",
-    "is working with determination",
-    "shows resilience in learning",
-    "is on their own unique path",
-    "continues to try with heart",
-  ],
-  strengthOpeners: [
-    "It's wonderful to see",
-    "We're so proud of",
-    "What a joy to notice",
-    "It's heartwarming to observe",
-    "We celebrate",
-  ],
-  improvementOpeners: [
-    "With a little more practice in",
-    "We're confident that focusing on",
-    "With gentle encouragement in",
-    "As we work together on",
-    "With continued support in",
-  ],
+const ENGLISH = {
+  openers: {
+    strong: [
+      'shows confident progress',
+      'is performing with consistency',
+      'demonstrates a strong grasp of key skills',
+    ],
+    steady: [
+      'is making steady progress',
+      'is building skills step by step',
+      'shows a positive learning attitude',
+    ],
+    support: [
+      'is learning with determination',
+      'is working hard and needs a little more guidance',
+      'is developing and will benefit from focused practice',
+    ],
+  },
   closings: [
-    "Keep up the wonderful work!",
-    "We believe in you!",
-    "Your hard work is truly paying off!",
-    "The future is bright!",
-    "We're cheering you on!",
-    "You're doing great!",
-    "Every step forward counts!",
+    'Keep practising regularly and you will see quick improvement.',
+    'With consistent effort, excellent progress is expected.',
+    'Continue the good work and stay confident.',
   ],
+  connectors: {
+    strengths: ['Strong areas include', 'The student does well in', 'Key strengths are'],
+    developing: ['Developing well in', 'Making progress in', 'Showing improvement in'],
+    focus: ['Needs more practice in', 'Should focus more on', 'Would benefit from extra practice in'],
+    unrated: ['Some skills are not yet recorded:', 'Ratings are pending for:', 'Not assessed yet:'],
+  },
 };
 
-const HINDI_PHRASES = {
-  excellent: [
-    "शानदार प्रगति कर रहे हैं",
-    "अद्भुत प्रदर्शन दिखा रहे हैं",
-    "उत्कृष्ट समर्पण दिखाते हैं",
-    "बहुत अच्छा काम कर रहे हैं",
-    "हमें गर्वित कर रहे हैं",
-  ],
-  good: [
-    "निरंतर प्रगति कर रहे हैं",
-    "मेहनत से सीख रहे हैं",
-    "सुंदर विकास दिखा रहे हैं",
-    "उत्साह से पढ़ रहे हैं",
-    "अच्छी राह पर हैं",
-  ],
-  average: [
-    "हर दिन आगे बढ़ रहे हैं",
-    "अच्छी क्षमता दिखाते हैं",
-    "मजबूत नींव बना रहे हैं",
-    "विकास की राह पर हैं",
-    "सार्थक प्रयास कर रहे हैं",
-  ],
-  needsSupport: [
-    "अपनी ताकत खोज रहे हैं",
-    "लगन से मेहनत कर रहे हैं",
-    "धीरे-धीरे सीख रहे हैं",
-    "अपने तरीके से बढ़ रहे हैं",
-    "दिल से प्रयास कर रहे हैं",
-  ],
-  strengthOpeners: [
-    "खुशी की बात है कि",
-    "हमें गर्व है कि",
-    "यह देखकर अच्छा लगा कि",
-    "सराहनीय है कि",
-    "हम सराहना करते हैं कि",
-  ],
-  improvementOpeners: [
-    "थोड़े और अभ्यास से",
-    "हमें विश्वास है कि",
-    "प्यार भरे प्रोत्साहन से",
-    "मिलकर काम करने से",
-    "निरंतर सहयोग से",
-  ],
-  closings: [
-    "इसी तरह आगे बढ़ो!",
-    "हमें तुम पर विश्वास है!",
-    "तुम्हारी मेहनत रंग ला रही है!",
-    "भविष्य उज्ज्वल है!",
-    "हम तुम्हारे साथ हैं!",
-    "बहुत अच्छे!",
-    "हर कदम मायने रखता है!",
-  ],
+const HINDI = {
+  openers: {
+    strong: ['बहुत अच्छी प्रगति कर रहे हैं', 'कौशल में मजबूत पकड़ दिखाते हैं', 'निरंतर अच्छा प्रदर्शन कर रहे हैं'],
+    steady: ['निरंतर प्रगति कर रहे हैं', 'धीरे-धीरे कौशल मजबूत कर रहे हैं', 'सीखने में सकारात्मक रवैया दिखाते हैं'],
+    support: ['मेहनत कर रहे हैं और थोड़ा मार्गदर्शन चाहिए', 'ध्यानपूर्वक अभ्यास से सुधार होगा', 'केंद्रित अभ्यास से काफी लाभ होगा'],
+  },
+  closings: ['नियमित अभ्यास जारी रखें, निश्चित ही सुधार होगा।', 'लगातार मेहनत से बहुत अच्छी प्रगति होगी।', 'इसी तरह प्रयास करते रहें।'],
+  connectors: {
+    strengths: ['मजबूत पक्ष हैं', 'इन क्षेत्रों में अच्छा हैं', 'मुख्य ताकतें हैं'],
+    developing: ['इनमें प्रगति दिख रही है', 'इनमें सुधार हो रहा है', 'इन क्षेत्रों में अच्छा विकास है'],
+    focus: ['इन पर अधिक अभ्यास की आवश्यकता है', 'इन पर अधिक ध्यान दें', 'इनमें अतिरिक्त अभ्यास से लाभ होगा'],
+    unrated: ['कुछ कौशल अभी दर्ज नहीं हैं:', 'इनके लिए रेटिंग लंबित है:', 'अभी आकलन नहीं हुआ:'],
+  },
 };
 
-function getRandomItem<T>(array: T[]): T {
-  return array[Math.floor(Math.random() * array.length)];
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function getSubjectDisplayName(subject: string, language: 'english' | 'hindi'): string {
+function joinList(items: string[], language: 'english' | 'hindi'): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return language === 'hindi' ? `${items[0]} और ${items[1]}` : `${items[0]} and ${items[1]}`;
+  const last = items[items.length - 1];
+  const rest = items.slice(0, -1).join(', ');
+  return language === 'hindi' ? `${rest} और ${last}` : `${rest}, and ${last}`;
+}
+
+function displaySubject(subject: string, language: 'english' | 'hindi'): string {
   const hindiNames: Record<string, string> = {
     'Speaking & Listening Skills': 'बोलना और सुनना',
     'Writing Skills': 'लेखन कौशल',
@@ -134,72 +80,67 @@ function getSubjectDisplayName(subject: string, language: 'english' | 'hindi'): 
     'Music': 'संगीत',
     'Computer Science': 'कंप्यूटर विज्ञान',
   };
-  
-  if (language === 'hindi') {
-    return hindiNames[subject] || subject;
-  }
-  return subject.toLowerCase().replace(' skills', '').replace(' usage', '');
+
+  if (language === 'hindi') return hindiNames[subject] || subject;
+  return subject.replace(' Skills', '').replace(' Usage', '');
 }
 
 export async function generateRemark({ student, language, selectedSubjects }: RemarkGeneratorParams): Promise<string> {
-  // Simulate a brief delay for a more natural feel
-  await new Promise(resolve => setTimeout(resolve, 300));
-  
-  return generateHumanizedRemark(student, language, selectedSubjects);
+  // Small delay for a natural feel
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  return generateTeacherLikeRemark(student, language, selectedSubjects);
 }
 
-function generateHumanizedRemark(
-  student: Student,
-  language: 'english' | 'hindi',
-  selectedSubjects: string[]
-): string {
-  const phrases = language === 'hindi' ? HINDI_PHRASES : ENGLISH_PHRASES;
-  const studentName = student.name || (language === 'hindi' ? 'छात्र' : 'The student');
-  
-  // Analyze skills
-  const skills = selectedSubjects.map(subject => ({
-    name: getSubjectDisplayName(subject, language),
-    rating: student.subjectRatings[subject] || 'Good',
-    value: SKILL_VALUES[student.subjectRatings[subject] || 'Good'],
-  }));
-  
-  const strengths = skills.filter(s => s.value === 2).map(s => s.name);
-  const averages = skills.filter(s => s.value === 1).map(s => s.name);
-  const needsImprovement = skills.filter(s => s.value === 0).map(s => s.name);
-  
-  const maxScore = selectedSubjects.length * 2;
-  const percentage = (student.total / maxScore) * 100;
-  
-  const remarkParts: string[] = [];
-  
-  // Opening based on overall performance
-  if (percentage >= 90) {
-    remarkParts.push(`${studentName} ${getRandomItem(phrases.excellent)}.`);
-  } else if (percentage >= 70) {
-    remarkParts.push(`${studentName} ${getRandomItem(phrases.good)}.`);
-  } else if (percentage >= 50) {
-    remarkParts.push(`${studentName} ${getRandomItem(phrases.average)}.`);
-  } else {
-    remarkParts.push(`${studentName} ${getRandomItem(phrases.needsSupport)}.`);
-  }
-  
-  // Highlight strengths warmly
+function generateTeacherLikeRemark(student: Student, language: 'english' | 'hindi', selectedSubjects: string[]): string {
+  const dict = language === 'hindi' ? HINDI : ENGLISH;
+  const name = student.name?.trim() || (language === 'hindi' ? 'छात्र/छात्रा' : 'The student');
+
+  const rated = selectedSubjects
+    .map((subject) => {
+      const rating = student.subjectRatings?.[subject];
+      return {
+        subject,
+        label: displaySubject(subject, language),
+        rating,
+        value: rating === undefined ? undefined : SKILL_VALUES[rating],
+      };
+    });
+
+  const strengths = rated.filter((s) => s.value === 2).map((s) => s.label);
+  const developing = rated.filter((s) => s.value === 1).map((s) => s.label);
+  const focus = rated.filter((s) => s.value === 0).map((s) => s.label);
+  const unrated = rated.filter((s) => s.value === undefined).map((s) => s.label);
+
+  const maxScore = getMaxPossibleScore(student.subjectRatings);
+  const percentage = maxScore > 0 ? (student.total / maxScore) * 100 : 0;
+
+  const openerBucket = percentage >= 80 ? 'strong' : percentage >= 55 ? 'steady' : 'support';
+
+  const parts: string[] = [];
+  parts.push(`${name} ${pick(dict.openers[openerBucket])}.`);
+
+  // Strengths (prioritize 1-3 skills)
   if (strengths.length > 0) {
-    const strengthList = strengths.length > 2 
-      ? `${strengths.slice(0, -1).join(', ')} ${language === 'hindi' ? 'और' : 'and'} ${strengths[strengths.length - 1]}`
-      : strengths.join(language === 'hindi' ? ' और ' : ' and ');
-    
-    remarkParts.push(`${getRandomItem(phrases.strengthOpeners)} ${language === 'hindi' ? 'उनकी' : 'their'} ${strengthList}${language === 'hindi' ? ' में प्रतिभा।' : ' skills.'}`);
+    parts.push(`${dict.connectors.strengths} ${joinList(strengths.slice(0, 3), language)}.`);
   }
-  
-  // Gentle encouragement for areas needing improvement
-  if (needsImprovement.length > 0 && needsImprovement.length <= 2) {
-    const improvementList = needsImprovement.join(language === 'hindi' ? ' और ' : ' and ');
-    remarkParts.push(`${getRandomItem(phrases.improvementOpeners)} ${improvementList}${language === 'hindi' ? ', और भी सुधार होगा।' : ', they will flourish even more.'}`);
+
+  // Developing
+  if (developing.length > 0) {
+    parts.push(`${dict.connectors.developing} ${joinList(developing.slice(0, 2), language)}.`);
   }
-  
-  // Warm closing
-  remarkParts.push(getRandomItem(phrases.closings));
-  
-  return remarkParts.join(' ');
+
+  // Focus areas (be specific)
+  if (focus.length > 0) {
+    parts.push(`${dict.connectors.focus} ${joinList(focus.slice(0, 2), language)}.`);
+  }
+
+  // Unrated note (do not assume)
+  if (unrated.length > 0) {
+    parts.push(`${dict.connectors.unrated} ${joinList(unrated, language)}.`);
+  }
+
+  parts.push(pick(dict.closings));
+
+  return parts.join(' ');
 }
+
