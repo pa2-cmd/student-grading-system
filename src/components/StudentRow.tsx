@@ -67,24 +67,33 @@ export function StudentRow({ student, onUpdate, onRemove, onGenerateRemark, canR
         <div className="flex items-start gap-2">
           <div className="flex-1">
             {student.remark ? (
-              <p className="text-sm text-foreground leading-relaxed">{student.remark}</p>
+              <div>
+                <p className="text-sm text-foreground leading-relaxed">{student.remark}</p>
+                {student.importedRemark && (
+                  <span className="text-xs text-muted-foreground">(imported)</span>
+                )}
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground italic">Click generate to create AI remark</p>
             )}
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onGenerateRemark}
-            disabled={student.isGeneratingRemark || !student.name}
-            className="shrink-0"
-          >
-            {student.isGeneratingRemark ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Sparkles className="h-4 w-4" />
-            )}
-          </Button>
+          {/* Only show AI button if remark was NOT imported - AI must NOT overwrite manual remarks */}
+          {!student.importedRemark && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onGenerateRemark}
+              disabled={student.isGeneratingRemark || !student.name}
+              className="shrink-0"
+              title="Generate AI remark"
+            >
+              {student.isGeneratingRemark ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+            </Button>
+          )}
         </div>
       </td>
       <td className="text-center">

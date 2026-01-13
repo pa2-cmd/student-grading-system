@@ -13,6 +13,8 @@ export interface Student {
   total: number;
   remark: string;
   isGeneratingRemark: boolean;
+  importedTotal?: boolean; // Track if total was imported from file
+  importedRemark?: boolean; // Track if remark was imported from file
 }
 
 export interface AssessmentData {
