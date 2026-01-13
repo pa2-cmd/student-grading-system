@@ -11,13 +11,47 @@ import {
 
 const STORAGE_KEY = 'assessment-data';
 
+function isValidStudent(student: any): student is Student {
+  return (
+    student &&
+    typeof student.id === 'string' &&
+    typeof student.serialNo === 'number' &&
+    typeof student.name === 'string' &&
+    ['Good', 'Average', 'Needs Improvement'].includes(student.speakingListening) &&
+    ['Good', 'Average', 'Needs Improvement'].includes(student.writing) &&
+    ['Good', 'Average', 'Needs Improvement'].includes(student.vocabulary) &&
+    ['Good', 'Average', 'Needs Improvement'].includes(student.grammar) &&
+    ['Good', 'Average', 'Needs Improvement'].includes(student.reading) &&
+    typeof student.total === 'number'
+  );
+}
+
+function isValidAssessmentData(data: any): data is AssessmentData {
+  return (
+    data &&
+    typeof data.schoolName === 'string' &&
+    typeof data.className === 'string' &&
+    typeof data.totalStrength === 'number' &&
+    Array.isArray(data.students) &&
+    data.students.every(isValidStudent) &&
+    ['english', 'hindi'].includes(data.language)
+  );
+}
+
 export function useAssessment() {
   const [data, setData] = useState<AssessmentData>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (isValidAssessmentData(parsed)) {
+          return parsed;
+        }
+        // Invalid data format - clear and start fresh
+        localStorage.removeItem(STORAGE_KEY);
+        return getDefaultAssessmentData();
       } catch {
+        localStorage.removeItem(STORAGE_KEY);
         return getDefaultAssessmentData();
       }
     }
