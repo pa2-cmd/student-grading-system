@@ -8,7 +8,7 @@ import {
   getDefaultAssessmentData,
   SKILL_VALUES 
 } from '@/types/assessment';
-import { parseStudentFile } from '@/utils/studentImport';
+import { validateAndParseFile } from '@/utils/studentImport';
 
 const STORAGE_KEY = 'assessment-data';
 
@@ -148,25 +148,36 @@ export function useAssessment() {
     reader.readAsText(file);
   }, []);
 
-  const importStudents = useCallback(async (file: File): Promise<{ success: boolean; count: number; error?: string }> => {
+  const importStudents = useCallback(async (file: File, replaceExisting: boolean = false): Promise<{ success: boolean; count: number; error?: string }> => {
     try {
-      const result = await parseStudentFile(file);
+      const result = await validateAndParseFile(file);
       if (result.count === 0) {
-        return { success: false, count: 0, error: 'No student names found in file.' };
+        return { success: false, count: 0, error: 'No valid student data found in file.' };
       }
       
       setData(prev => {
-        // Start serial numbers after existing students
-        const startSerial = prev.students.length;
-        const newStudents = result.students.map((s, i) => ({
-          ...s,
-          serialNo: startSerial + i + 1,
-        }));
-        
-        return {
-          ...prev,
-          students: [...prev.students, ...newStudents],
-        };
+        if (replaceExisting) {
+          // Replace all existing students with imported ones
+          return {
+            ...prev,
+            students: result.students.map((s, i) => ({
+              ...s,
+              serialNo: i + 1,
+            })),
+          };
+        } else {
+          // Append to existing students
+          const startSerial = prev.students.length;
+          const newStudents = result.students.map((s, i) => ({
+            ...s,
+            serialNo: startSerial + i + 1,
+          }));
+          
+          return {
+            ...prev,
+            students: [...prev.students, ...newStudents],
+          };
+        }
       });
       
       return { success: true, count: result.count };
@@ -174,7 +185,7 @@ export function useAssessment() {
       return { 
         success: false, 
         count: 0, 
-        error: error instanceof Error ? error.message : 'Failed to import file.' 
+        error: error instanceof Error ? error.message : 'Failed to import file. Please ensure it follows the required structure.' 
       };
     }
   }, []);

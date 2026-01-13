@@ -5,7 +5,7 @@ export function exportToExcel(data: AssessmentData) {
   // Create workbook
   const wb = XLSX.utils.book_new();
 
-  // Prepare header rows
+  // Prepare header rows - exact structure as specified
   const headerRows = [
     [data.schoolName],
     [`Class: ${data.className}`, '', '', '', '', '', `Total Strength: ${data.totalStrength}`],
@@ -21,30 +21,19 @@ export function exportToExcel(data: AssessmentData) {
       'Total',
       'Remarks'
     ],
-    [
-      '',
-      '',
-      'Good=2, Avg=1, NI=0',
-      'Good=2, Avg=1, NI=0',
-      'Good=2, Avg=1, NI=0',
-      'Good=2, Avg=1, NI=0',
-      'Good=2, Avg=1, NI=0',
-      '',
-      ''
-    ],
   ];
 
-  // Prepare student data rows
+  // Prepare student data rows - preserve exact structure
   const studentRows = data.students.map((student) => [
     student.serialNo,
     student.name,
-    `${student.speakingListening} (${SKILL_VALUES[student.speakingListening]})`,
-    `${student.writing} (${SKILL_VALUES[student.writing]})`,
-    `${student.vocabulary} (${SKILL_VALUES[student.vocabulary]})`,
-    `${student.grammar} (${SKILL_VALUES[student.grammar]})`,
-    `${student.reading} (${SKILL_VALUES[student.reading]})`,
-    student.total,
-    student.remark,
+    student.speakingListening || '', // Preserve blank if empty
+    student.writing || '',
+    student.vocabulary || '',
+    student.grammar || '',
+    student.reading || '',
+    student.total, // Use stored total (imported or calculated)
+    student.remark || '', // Preserve blank if empty
   ]);
 
   // Combine all rows
@@ -57,11 +46,11 @@ export function exportToExcel(data: AssessmentData) {
   ws['!cols'] = [
     { wch: 6 },   // S.No
     { wch: 25 },  // Student Name
-    { wch: 22 },  // Speaking & Listening
-    { wch: 18 },  // Writing
-    { wch: 18 },  // Vocabulary
-    { wch: 18 },  // Grammar
-    { wch: 22 },  // Reading
+    { wch: 26 },  // Speaking & Listening Skills
+    { wch: 15 },  // Writing Skills
+    { wch: 15 },  // Vocabulary
+    { wch: 15 },  // Grammar Usage
+    { wch: 22 },  // Reading Comprehension
     { wch: 8 },   // Total
     { wch: 50 },  // Remarks
   ];
@@ -70,6 +59,13 @@ export function exportToExcel(data: AssessmentData) {
   ws['!merges'] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }, // School name across all columns
   ];
+
+  // Freeze the top row (header row at row 4, which is index 3)
+  ws['!freeze'] = { xSplit: 0, ySplit: 4 };
+  
+  // Alternative freeze pane syntax for better compatibility
+  if (!ws['!views']) ws['!views'] = [];
+  ws['!views'].push({ state: 'frozen', ySplit: 4 });
 
   // Add worksheet to workbook
   XLSX.utils.book_append_sheet(wb, ws, 'Assessment');
