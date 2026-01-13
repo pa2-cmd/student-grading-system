@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { 
   AssessmentData, 
   Student, 
-  SkillRating, 
+  SkillRating,
+  SkillRatingOrUnselected,
   calculateTotal, 
   createEmptyStudent, 
   getDefaultAssessmentData,
@@ -32,16 +33,17 @@ export function useAssessment() {
         // Migrate old student format to new format with subjectRatings
         if (parsed.students && parsed.students.length > 0) {
           parsed.students = parsed.students.map((student: any, index: number) => {
-            // If student already has subjectRatings, keep it
+            // If student already has subjectRatings, keep it (preserve undefined values)
             if (student.subjectRatings) {
               return {
                 ...student,
                 rollNumber: student.rollNumber || '',
+                total: calculateTotal(student.subjectRatings),
               };
             }
             
             // Migrate from old format (individual skill properties)
-            const subjectRatings: Record<string, SkillRating> = {};
+            const subjectRatings: Record<string, SkillRatingOrUnselected> = {};
             
             // Map old properties to new subjectRatings
             if (student.speakingListening) subjectRatings['Speaking & Listening Skills'] = student.speakingListening;
@@ -50,10 +52,10 @@ export function useAssessment() {
             if (student.grammar) subjectRatings['Grammar Usage'] = student.grammar;
             if (student.reading) subjectRatings['Reading Comprehension'] = student.reading;
             
-            // Fill in defaults for any missing subjects
+            // Fill in defaults for any missing subjects (keep as undefined for unselected)
             parsed.selectedSubjects.forEach((subject: string) => {
-              if (!subjectRatings[subject]) {
-                subjectRatings[subject] = 'Good';
+              if (subjectRatings[subject] === undefined) {
+                subjectRatings[subject] = 'Good'; // Default for migrated data
               }
             });
             
@@ -98,9 +100,12 @@ export function useAssessment() {
     setData(prev => {
       // Update all existing students to have ratings for new subjects
       const updatedStudents = prev.students.map(student => {
-        const newRatings: Record<string, SkillRating> = {};
+        const newRatings: Record<string, SkillRatingOrUnselected> = {};
         subjects.forEach(subject => {
-          newRatings[subject] = student.subjectRatings[subject] || 'Good';
+          // Preserve existing rating or default to Good for new subjects
+          newRatings[subject] = student.subjectRatings[subject] !== undefined 
+            ? student.subjectRatings[subject] 
+            : 'Good';
         });
         return {
           ...student,

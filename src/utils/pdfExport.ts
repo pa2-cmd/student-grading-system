@@ -1,9 +1,11 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { AssessmentData, SKILL_VALUES } from '@/types/assessment';
+import { AssessmentData, SKILL_VALUES, getMaxPossibleScore } from '@/types/assessment';
 
 /**
  * Exports assessment data to a formatted PDF file
+ * - Preserves blank cells as "-" for unrated subjects
+ * - Calculates total based only on rated subjects
  */
 export function exportToPDF(data: AssessmentData): void {
   const doc = new jsPDF({
@@ -40,21 +42,26 @@ export function exportToPDF(data: AssessmentData): void {
     'Remarks',
   ];
   
-  const maxScore = data.selectedSubjects.length * 2;
-  
   const tableData = data.students
     .filter(s => s.name.trim())
-    .map(student => [
-      student.serialNo,
-      student.rollNumber || '-',
-      student.name,
-      ...data.selectedSubjects.map(subject => {
-        const rating = student.subjectRatings[subject] || 'Good';
-        return `${rating} (${SKILL_VALUES[rating]})`;
-      }),
-      `${student.total}/${maxScore}`,
-      student.remark || '-',
-    ]);
+    .map(student => {
+      const maxScore = getMaxPossibleScore(student.subjectRatings);
+      
+      return [
+        student.serialNo,
+        student.rollNumber || '-',
+        student.name,
+        ...data.selectedSubjects.map(subject => {
+          const rating = student.subjectRatings[subject];
+          // Show "-" for unselected/blank ratings
+          if (rating === undefined) return '-';
+          return `${rating} (${SKILL_VALUES[rating]})`;
+        }),
+        // Total only counts rated subjects
+        `${student.total}/${maxScore}`,
+        student.remark || '-',
+      ];
+    });
   
   // Generate table
   autoTable(doc, {

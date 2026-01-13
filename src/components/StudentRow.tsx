@@ -1,4 +1,4 @@
-import { Student, SkillRating } from '@/types/assessment';
+import { Student, SkillRating, getMaxPossibleScore } from '@/types/assessment';
 import { SkillSelect } from './SkillSelect';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,10 +28,18 @@ export function StudentRow({
   const [isEditingRemark, setIsEditingRemark] = useState(false);
   const [editedRemark, setEditedRemark] = useState(student.remark);
 
-  const maxScore = selectedSubjects.length * 2;
-  const percentage = (student.total / maxScore) * 100;
+  // Calculate max score based on fields that have actual values (not unselected)
+  const maxPossibleScore = getMaxPossibleScore(student.subjectRatings);
+  const totalSelectedSubjects = selectedSubjects.length;
+  const ratedSubjectsCount = Object.values(student.subjectRatings).filter(r => r !== undefined).length;
+  
+  // Show different display based on whether all subjects are rated
+  const hasUnratedSubjects = ratedSubjectsCount < totalSelectedSubjects;
+  
+  const percentage = maxPossibleScore > 0 ? (student.total / maxPossibleScore) * 100 : 0;
   
   const getTotalClass = () => {
+    if (hasUnratedSubjects) return 'text-muted-foreground'; // Incomplete
     if (percentage >= 80) return 'text-skill-good font-bold';
     if (percentage >= 50) return 'text-skill-average font-bold';
     return 'text-skill-needs font-bold';
@@ -77,19 +85,26 @@ export function StudentRow({
         />
       </td>
       
-      {/* Dynamic Subject Columns */}
+      {/* Dynamic Subject Columns - Pass undefined for unselected state */}
       {selectedSubjects.map(subject => (
         <td key={subject}>
           <SkillSelect
-            value={student.subjectRatings?.[subject] || 'Good'}
+            value={student.subjectRatings?.[subject]}
             onChange={(value: SkillRating) => onUpdateSubjectRating(subject, value)}
           />
         </td>
       ))}
       
-      {/* Total Score */}
+      {/* Total Score - Shows rated count if incomplete */}
       <td className={`text-center text-lg ${getTotalClass()}`}>
-        {student.total}/{maxScore}
+        {hasUnratedSubjects ? (
+          <span title={`${ratedSubjectsCount}/${totalSelectedSubjects} subjects rated`}>
+            {student.total}/{maxPossibleScore}
+            <span className="text-xs block text-muted-foreground">({ratedSubjectsCount}/{totalSelectedSubjects})</span>
+          </span>
+        ) : (
+          `${student.total}/${maxPossibleScore}`
+        )}
       </td>
       
       {/* AI Remarks - Editable */}
