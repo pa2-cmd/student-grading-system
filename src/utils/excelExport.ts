@@ -137,10 +137,11 @@ export function exportToExcel(data: AssessmentData) {
         student.gender || '',
       ];
       
-      // Track NA subjects
+      // Track NA subjects (French, Sanskrit)
       const naSubjects = new Set(student.naSubjects || []);
       
       // Helper to check if subject is NA (case-insensitive, also checks detail flag)
+      // Handles both French and Sanskrit as optional subjects
       const isSubjectNA = (subject: string): boolean => {
         const normalizedSubject = subject.toLowerCase();
         // Direct match
@@ -150,6 +151,15 @@ export function exportToExcel(data: AssessmentData) {
         // Check if subjectMarksDetail has isNA flag
         const detail = student.subjectMarksDetail?.[subject];
         if (detail && 'isNA' in detail && (detail as any).isNA) return true;
+        // Check by known NA subject names (French, Sanskrit)
+        const isOptionalSubject = normalizedSubject.includes('french') || normalizedSubject.includes('sanskrit') ||
+                                  normalizedSubject === 'fr' || normalizedSubject === 'sans';
+        if (isOptionalSubject) {
+          // Check if marks are NA/blank for optional subjects
+          const simpleMark = student.subjectMarks?.[subject];
+          if (detail && (detail.total === null || detail.total === undefined)) return true;
+          if (!detail && (simpleMark === null || simpleMark === undefined)) return true;
+        }
         return false;
       };
       
@@ -308,6 +318,10 @@ export function exportToExcel(data: AssessmentData) {
   ws['!merges'] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: columnHeaders.length - 1 } },
   ];
+
+  // FREEZE TOP ROW (header row) - Row 1 is title, Row 2 is headers
+  // Freeze at row 2 (0-indexed) so header row stays visible when scrolling
+  ws['!freeze'] = { xSplit: 0, ySplit: 2, topLeftCell: 'A3', state: 'frozen' };
 
   XLSX.utils.book_append_sheet(wb, ws, 'Consolidated MarkSheet');
 
