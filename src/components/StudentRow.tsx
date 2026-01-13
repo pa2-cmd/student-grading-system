@@ -21,7 +21,7 @@ export function StudentRow({ student, onUpdate, onRemove, onGenerateRemark, canR
 
   return (
     <tr className="animate-fade-in hover:bg-muted/50 transition-colors">
-      <td className="text-center font-medium">{student.serialNo}</td>
+      <td className="text-center font-medium">{student.serialNo !== null ? student.serialNo : ''}</td>
       <td>
         <Input
           value={student.name}

@@ -21,10 +21,10 @@ export function exportToExcel(data: AssessmentData) {
   // ROW 1: Exact column headers (no extra rows, no merged cells)
   const rows: any[][] = [COLUMN_HEADERS];
 
-  // Data rows - preserve exact values, NA stays as NA, blank stays blank
+  // Data rows - preserve exact values including S.No
   data.students.forEach((student) => {
     rows.push([
-      student.serialNo,
+      student.serialNo !== null && student.serialNo !== undefined ? student.serialNo : '', // Preserve S.No exactly
       student.name || '',
       student.speakingListening || '',
       student.writing || '',

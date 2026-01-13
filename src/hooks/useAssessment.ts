@@ -16,7 +16,7 @@ function isValidStudent(student: any): student is Student {
   return (
     student &&
     typeof student.id === 'string' &&
-    typeof student.serialNo === 'number' &&
+    (typeof student.serialNo === 'number' || typeof student.serialNo === 'string' || student.serialNo === null) &&
     typeof student.name === 'string' &&
     ['Good', 'Average', 'Needs Improvement'].includes(student.speakingListening) &&
     ['Good', 'Average', 'Needs Improvement'].includes(student.writing) &&
@@ -85,9 +85,8 @@ export function useAssessment() {
   const removeStudent = useCallback((id: string) => {
     setData(prev => ({
       ...prev,
-      students: prev.students
-        .filter(s => s.id !== id)
-        .map((s, index) => ({ ...s, serialNo: index + 1 })),
+      students: prev.students.filter(s => s.id !== id),
+      // DO NOT renumber - preserve original S.No values
     }));
   }, []);
 
