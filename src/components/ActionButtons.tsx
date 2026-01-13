@@ -7,16 +7,18 @@ import {
   RotateCcw, 
   Sparkles,
   Loader2,
-  Users
+  FileText,
+  FileUp
 } from 'lucide-react';
 import { useRef } from 'react';
 
 interface ActionButtonsProps {
   onAddStudent: () => void;
   onExportExcel: () => void;
+  onExportPDF: () => void;
   onExportJSON: () => void;
   onImportJSON: (file: File) => void;
-  onImportStudents: (file: File) => void;
+  onImportExcel: (file: File) => void;
   onReset: () => void;
   onGenerateAllRemarks: () => void;
   isGeneratingAll: boolean;
@@ -26,26 +28,27 @@ interface ActionButtonsProps {
 export function ActionButtons({
   onAddStudent,
   onExportExcel,
+  onExportPDF,
   onExportJSON,
   onImportJSON,
-  onImportStudents,
+  onImportExcel,
   onReset,
   onGenerateAllRemarks,
   isGeneratingAll,
   studentCount,
 }: ActionButtonsProps) {
   const jsonInputRef = useRef<HTMLInputElement>(null);
-  const studentInputRef = useRef<HTMLInputElement>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImportJSONClick = () => {
+  const handleJSONImportClick = () => {
     jsonInputRef.current?.click();
   };
 
-  const handleImportStudentsClick = () => {
-    studentInputRef.current?.click();
+  const handleExcelImportClick = () => {
+    excelInputRef.current?.click();
   };
 
-  const handleJSONChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleJSONFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       onImportJSON(file);
@@ -53,28 +56,20 @@ export function ActionButtons({
     }
   };
 
-  const handleStudentsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleExcelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      onImportStudents(file);
+      onImportExcel(file);
       e.target.value = '';
     }
   };
 
   return (
     <div className="flex flex-wrap gap-3 mb-6">
+      {/* Add & Generate */}
       <Button onClick={onAddStudent} className="btn-primary gap-2">
         <Plus className="h-4 w-4" />
         Add Student
-      </Button>
-
-      <Button 
-        onClick={handleImportStudentsClick} 
-        variant="outline" 
-        className="gap-2 border-accent text-accent-foreground bg-accent/10 hover:bg-accent hover:text-accent-foreground"
-      >
-        <Users className="h-4 w-4" />
-        Import Names (CSV/Excel)
       </Button>
 
       <Button 
@@ -90,6 +85,17 @@ export function ActionButtons({
         Generate All Remarks
       </Button>
 
+      {/* Import from Excel */}
+      <Button 
+        onClick={handleExcelImportClick} 
+        variant="outline" 
+        className="gap-2 border-accent text-accent hover:bg-accent hover:text-accent-foreground"
+      >
+        <FileUp className="h-4 w-4" />
+        Import Students (Excel)
+      </Button>
+
+      {/* Export Options */}
       <Button 
         onClick={onExportExcel} 
         variant="outline" 
@@ -99,29 +105,38 @@ export function ActionButtons({
         Export Excel
       </Button>
 
+      <Button 
+        onClick={onExportPDF} 
+        variant="outline" 
+        className="gap-2 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+      >
+        <FileText className="h-4 w-4" />
+        Export PDF
+      </Button>
+
       <Button onClick={onExportJSON} variant="outline" className="gap-2">
         <Download className="h-4 w-4" />
         Backup JSON
       </Button>
 
-      <Button onClick={handleImportJSONClick} variant="outline" className="gap-2">
+      <Button onClick={handleJSONImportClick} variant="outline" className="gap-2">
         <Upload className="h-4 w-4" />
         Import JSON
       </Button>
 
+      {/* Hidden file inputs */}
       <input
         ref={jsonInputRef}
         type="file"
         accept=".json"
-        onChange={handleJSONChange}
+        onChange={handleJSONFileChange}
         className="hidden"
       />
-
       <input
-        ref={studentInputRef}
+        ref={excelInputRef}
         type="file"
-        accept=".csv,.xlsx,.xls"
-        onChange={handleStudentsChange}
+        accept=".xlsx,.xls"
+        onChange={handleExcelFileChange}
         className="hidden"
       />
 

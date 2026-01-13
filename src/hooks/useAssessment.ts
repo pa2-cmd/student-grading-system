@@ -8,36 +8,8 @@ import {
   getDefaultAssessmentData,
   SKILL_VALUES 
 } from '@/types/assessment';
-import { validateAndParseFile } from '@/utils/studentImport';
 
 const STORAGE_KEY = 'assessment-data';
-
-function isValidStudent(student: any): student is Student {
-  return (
-    student &&
-    typeof student.id === 'string' &&
-    (typeof student.serialNo === 'number' || typeof student.serialNo === 'string' || student.serialNo === null) &&
-    typeof student.name === 'string' &&
-    ['Good', 'Average', 'Needs Improvement'].includes(student.speakingListening) &&
-    ['Good', 'Average', 'Needs Improvement'].includes(student.writing) &&
-    ['Good', 'Average', 'Needs Improvement'].includes(student.vocabulary) &&
-    ['Good', 'Average', 'Needs Improvement'].includes(student.grammar) &&
-    ['Good', 'Average', 'Needs Improvement'].includes(student.reading) &&
-    typeof student.total === 'number'
-  );
-}
-
-function isValidAssessmentData(data: any): data is AssessmentData {
-  return (
-    data &&
-    typeof data.schoolName === 'string' &&
-    typeof data.className === 'string' &&
-    typeof data.totalStrength === 'number' &&
-    Array.isArray(data.students) &&
-    data.students.every(isValidStudent) &&
-    ['english', 'hindi'].includes(data.language)
-  );
-}
 
 export function useAssessment() {
   const [data, setData] = useState<AssessmentData>(() => {
@@ -45,14 +17,61 @@ export function useAssessment() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (isValidAssessmentData(parsed)) {
-          return parsed;
+        
+        // Ensure selectedSubjects exists for backward compatibility
+        if (!parsed.selectedSubjects) {
+          parsed.selectedSubjects = [
+            'Speaking & Listening Skills',
+            'Writing Skills',
+            'Vocabulary',
+            'Grammar Usage',
+            'Reading Comprehension',
+          ];
         }
-        // Invalid data format - clear and start fresh
-        localStorage.removeItem(STORAGE_KEY);
-        return getDefaultAssessmentData();
+        
+        // Migrate old student format to new format with subjectRatings
+        if (parsed.students && parsed.students.length > 0) {
+          parsed.students = parsed.students.map((student: any, index: number) => {
+            // If student already has subjectRatings, keep it
+            if (student.subjectRatings) {
+              return {
+                ...student,
+                rollNumber: student.rollNumber || '',
+              };
+            }
+            
+            // Migrate from old format (individual skill properties)
+            const subjectRatings: Record<string, SkillRating> = {};
+            
+            // Map old properties to new subjectRatings
+            if (student.speakingListening) subjectRatings['Speaking & Listening Skills'] = student.speakingListening;
+            if (student.writing) subjectRatings['Writing Skills'] = student.writing;
+            if (student.vocabulary) subjectRatings['Vocabulary'] = student.vocabulary;
+            if (student.grammar) subjectRatings['Grammar Usage'] = student.grammar;
+            if (student.reading) subjectRatings['Reading Comprehension'] = student.reading;
+            
+            // Fill in defaults for any missing subjects
+            parsed.selectedSubjects.forEach((subject: string) => {
+              if (!subjectRatings[subject]) {
+                subjectRatings[subject] = 'Good';
+              }
+            });
+            
+            return {
+              id: student.id || crypto.randomUUID(),
+              serialNo: student.serialNo || index + 1,
+              name: student.name || '',
+              rollNumber: student.rollNumber || '',
+              subjectRatings,
+              total: calculateTotal(subjectRatings),
+              remark: student.remark || '',
+              isGeneratingRemark: false,
+            };
+          });
+        }
+        
+        return parsed;
       } catch {
-        localStorage.removeItem(STORAGE_KEY);
         return getDefaultAssessmentData();
       }
     }
@@ -75,18 +94,42 @@ export function useAssessment() {
     }));
   }, []);
 
+  const updateSelectedSubjects = useCallback((subjects: string[]) => {
+    setData(prev => {
+      // Update all existing students to have ratings for new subjects
+      const updatedStudents = prev.students.map(student => {
+        const newRatings: Record<string, SkillRating> = {};
+        subjects.forEach(subject => {
+          newRatings[subject] = student.subjectRatings[subject] || 'Good';
+        });
+        return {
+          ...student,
+          subjectRatings: newRatings,
+          total: calculateTotal(newRatings),
+        };
+      });
+      
+      return {
+        ...prev,
+        selectedSubjects: subjects,
+        students: updatedStudents,
+      };
+    });
+  }, []);
+
   const addStudent = useCallback(() => {
     setData(prev => ({
       ...prev,
-      students: [...prev.students, createEmptyStudent(prev.students.length + 1)],
+      students: [...prev.students, createEmptyStudent(prev.students.length + 1, prev.selectedSubjects)],
     }));
   }, []);
 
   const removeStudent = useCallback((id: string) => {
     setData(prev => ({
       ...prev,
-      students: prev.students.filter(s => s.id !== id),
-      // DO NOT renumber - preserve original S.No values
+      students: prev.students
+        .filter(s => s.id !== id)
+        .map((s, index) => ({ ...s, serialNo: index + 1 })),
     }));
   }, []);
 
@@ -98,12 +141,28 @@ export function useAssessment() {
         
         const updated = { ...student, [field]: value };
         
-        // Recalculate total if a skill field changed
-        if (['speakingListening', 'writing', 'vocabulary', 'grammar', 'reading'].includes(field)) {
-          updated.total = calculateTotal(updated);
+        // Recalculate total if subject ratings changed
+        if (field === 'subjectRatings') {
+          updated.total = calculateTotal(updated.subjectRatings);
         }
         
         return updated;
+      }),
+    }));
+  }, []);
+
+  const updateSubjectRating = useCallback((studentId: string, subject: string, rating: SkillRating) => {
+    setData(prev => ({
+      ...prev,
+      students: prev.students.map(student => {
+        if (student.id !== studentId) return student;
+        
+        const newRatings = { ...student.subjectRatings, [subject]: rating };
+        return {
+          ...student,
+          subjectRatings: newRatings,
+          total: calculateTotal(newRatings),
+        };
       }),
     }));
   }, []);
@@ -116,6 +175,13 @@ export function useAssessment() {
           ? { ...student, remark, isGeneratingRemark: isGenerating }
           : student
       ),
+    }));
+  }, []);
+
+  const importStudents = useCallback((students: Student[]) => {
+    setData(prev => ({
+      ...prev,
+      students: students,
     }));
   }, []);
 
@@ -139,6 +205,16 @@ export function useAssessment() {
     reader.onload = (e) => {
       try {
         const imported = JSON.parse(e.target?.result as string);
+        // Ensure selectedSubjects exists
+        if (!imported.selectedSubjects) {
+          imported.selectedSubjects = [
+            'Speaking & Listening Skills',
+            'Writing Skills',
+            'Vocabulary',
+            'Grammar Usage',
+            'Reading Comprehension',
+          ];
+        }
         setData(imported);
       } catch (error) {
         console.error('Failed to import JSON:', error);
@@ -147,59 +223,19 @@ export function useAssessment() {
     reader.readAsText(file);
   }, []);
 
-  const importStudents = useCallback(async (file: File, replaceExisting: boolean = false): Promise<{ success: boolean; count: number; error?: string }> => {
-    try {
-      const result = await validateAndParseFile(file);
-      if (result.count === 0) {
-        return { success: false, count: 0, error: 'No valid student data found in file.' };
-      }
-      
-      setData(prev => {
-        if (replaceExisting) {
-          // Replace all existing students with imported ones
-          return {
-            ...prev,
-            students: result.students.map((s, i) => ({
-              ...s,
-              serialNo: i + 1,
-            })),
-          };
-        } else {
-          // Append to existing students
-          const startSerial = prev.students.length;
-          const newStudents = result.students.map((s, i) => ({
-            ...s,
-            serialNo: startSerial + i + 1,
-          }));
-          
-          return {
-            ...prev,
-            students: [...prev.students, ...newStudents],
-          };
-        }
-      });
-      
-      return { success: true, count: result.count };
-    } catch (error) {
-      return { 
-        success: false, 
-        count: 0, 
-        error: error instanceof Error ? error.message : 'Failed to import file. Please ensure it follows the required structure.' 
-      };
-    }
-  }, []);
-
   return {
     data,
     updateSchoolInfo,
     toggleLanguage,
+    updateSelectedSubjects,
     addStudent,
     removeStudent,
     updateStudent,
+    updateSubjectRating,
     updateStudentRemark,
+    importStudents,
     resetAll,
     exportJSON,
     importJSON,
-    importStudents,
   };
 }

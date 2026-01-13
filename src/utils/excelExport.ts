@@ -1,76 +1,45 @@
 import * as XLSX from 'xlsx';
-import { AssessmentData } from '@/types/assessment';
-
-// Exact column headers - must match import requirements
-const COLUMN_HEADERS = [
-  'S.No',
-  'Student Name',
-  'Speaking & Listening Skills',
-  'Writing Skills',
-  'Vocabulary',
-  'Grammar Usage',
-  'Reading Comprehension',
-  'Total',
-  'Remarks'
-];
+import { AssessmentData, SKILL_VALUES } from '@/types/assessment';
 
 export function exportToExcel(data: AssessmentData) {
-  // Create workbook
   const wb = XLSX.utils.book_new();
+  const maxScore = data.selectedSubjects.length * 2;
 
-  // ROW 1: Exact column headers (no extra rows, no merged cells)
-  const rows: any[][] = [COLUMN_HEADERS];
-
-  // Data rows - preserve exact values including S.No
-  data.students.forEach((student) => {
-    rows.push([
-      student.serialNo !== null && student.serialNo !== undefined ? student.serialNo : '', // Preserve S.No exactly
-      student.name || '',
-      student.speakingListening || '',
-      student.writing || '',
-      student.vocabulary || '',
-      student.grammar || '',
-      student.reading || '',
-      student.total !== null && student.total !== undefined ? student.total : '',
-      student.remark || '',
-    ]);
-  });
-
-  // Create worksheet from array - clean, no merged cells
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-
-  // Set column widths for readability (does not affect import)
-  ws['!cols'] = [
-    { wch: 6 },   // S.No
-    { wch: 25 },  // Student Name
-    { wch: 26 },  // Speaking & Listening Skills
-    { wch: 15 },  // Writing Skills
-    { wch: 15 },  // Vocabulary
-    { wch: 15 },  // Grammar Usage
-    { wch: 22 },  // Reading Comprehension
-    { wch: 8 },   // Total
-    { wch: 50 },  // Remarks
+  const headerRows = [
+    [data.schoolName],
+    [`Class: ${data.className}`, '', '', `Total Strength: ${data.totalStrength}`, '', `Date: ${new Date().toLocaleDateString()}`],
+    [],
+    ['S.No', 'Roll No', 'Student Name', ...data.selectedSubjects, 'Total', 'Remarks'],
   ];
 
-  // Add worksheet to workbook
+  const studentRows = data.students
+    .filter(s => s.name.trim())
+    .map((student) => [
+      student.serialNo,
+      student.rollNumber || '-',
+      student.name,
+      ...data.selectedSubjects.map(subject => {
+        const rating = student.subjectRatings[subject] || 'Good';
+        return `${rating} (${SKILL_VALUES[rating]})`;
+      }),
+      `${student.total}/${maxScore}`,
+      student.remark,
+    ]);
+
+  const allRows = [...headerRows, ...studentRows];
+  const ws = XLSX.utils.aoa_to_sheet(allRows);
+
+  ws['!cols'] = [
+    { wch: 6 }, { wch: 10 }, { wch: 25 },
+    ...data.selectedSubjects.map(() => ({ wch: 18 })),
+    { wch: 10 }, { wch: 50 },
+  ];
+
+  const totalCols = 3 + data.selectedSubjects.length + 2;
+  ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } }];
+
   XLSX.utils.book_append_sheet(wb, ws, 'Assessment');
 
-  // Create metadata sheet with school info (separate from data)
-  const metaRows = [
-    ['School Name', data.schoolName],
-    ['Class', data.className],
-    ['Total Strength', data.totalStrength],
-    ['Export Date', new Date().toISOString().split('T')[0]],
-  ];
-  const metaWs = XLSX.utils.aoa_to_sheet(metaRows);
-  metaWs['!cols'] = [{ wch: 15 }, { wch: 40 }];
-  XLSX.utils.book_append_sheet(wb, metaWs, 'Info');
-
-  // Generate filename
-  const safeName = (data.schoolName || 'School').replace(/[^a-zA-Z0-9]/g, '_');
-  const safeClass = (data.className || 'Class').replace(/[^a-zA-Z0-9]/g, '_');
-  const filename = `${safeName}_${safeClass}_Assessment_${new Date().toISOString().split('T')[0]}.xlsx`;
-
-  // Save file
+  const filename = `${(data.schoolName || 'Assessment').replace(/\s+/g, '_')}_${(data.className || 'Report').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
   XLSX.writeFile(wb, filename);
 }
