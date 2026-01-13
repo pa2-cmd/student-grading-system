@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { Student, SkillRating, calculateTotal, SKILL_OPTIONS } from '@/types/assessment';
+import { Student, SkillRating, SkillRatingOrUnselected, calculateTotal, SKILL_OPTIONS } from '@/types/assessment';
 
 // ============================================================
 // EXPECTED COLUMN HEADERS (STRICT MATCHING)
@@ -134,7 +134,7 @@ function analyzeSheetStructure(worksheet: XLSX.WorkSheet): SheetAnalysisResult {
       if (missingSubjects.length > 0) {
         result.warnings.push(
           `Some subject columns not found: ${missingSubjects.join(', ')}. ` +
-          `These will use default values.`
+          `These will show as unselected.`
         );
       }
 
@@ -271,36 +271,57 @@ function extractMetadata(metadataRows: any[][]): ExtractedMetadata {
 }
 
 // ============================================================
-// STEP 3: DATA IMPORT
-// Imports student data starting from the row after the header
+// STEP 3: DATA IMPORT - MARKS IMPORT LOGIC (CRITICAL)
+// Handles existing marks, blank values, and NA entries
 // ============================================================
 
 /**
  * Parses a skill rating value from Excel cell
- * Handles: "Good", "Average", "Needs Improvement", numbers (2,1,0)
+ * 
+ * CRITICAL RULES:
+ * - If value EXISTS: Import exactly as-is (Good/Average/Needs Improvement)
+ * - If value is BLANK or NA: Return undefined (unselected state)
+ * - Never auto-fill blank values
+ * - Never convert blank to zero or default
  */
-function parseSkillRating(value: any): SkillRating {
+function parseSkillRating(value: any): SkillRatingOrUnselected {
+  // --------------------------------------------------------
+  // Handle BLANK or NA values → Return undefined (unselected)
+  // --------------------------------------------------------
   if (value === null || value === undefined || value === '') {
-    return 'Good'; // Default value
+    return undefined; // Unselected - DO NOT default to any value
   }
 
   const stringValue = String(value).trim().toLowerCase();
   
+  // Check for explicit NA/blank markers
+  if (stringValue === 'na' || stringValue === 'n/a' || stringValue === '-' || 
+      stringValue === 'blank' || stringValue === 'nil' || stringValue === '') {
+    return undefined; // Unselected state
+  }
+
+  // --------------------------------------------------------
+  // Handle EXISTING marks values → Import exactly as-is
+  // --------------------------------------------------------
+  
   // Check for exact rating matches
   if (stringValue === 'good' || stringValue === '2') return 'Good';
-  if (stringValue === 'average' || stringValue === '1') return 'Average';
+  if (stringValue === 'average' || stringValue === 'avg' || stringValue === '1') return 'Average';
   if (stringValue.includes('needs') || stringValue.includes('improvement') || 
       stringValue === '0' || stringValue === 'ni') return 'Needs Improvement';
 
-  // Try to parse as number
+  // Try to parse as number (for numeric marks)
   const numValue = Number(value);
   if (!isNaN(numValue)) {
     if (numValue >= 2) return 'Good';
     if (numValue >= 1) return 'Average';
-    return 'Needs Improvement';
+    if (numValue === 0) return 'Needs Improvement';
+    // If it's some other number, try to interpret
+    return undefined; // Unknown numeric value - let user select
   }
 
-  return 'Good'; // Default
+  // Unknown text value - return undefined for user to select
+  return undefined;
 }
 
 /**
@@ -374,22 +395,25 @@ function importStudentData(
 
     // --------------------------------------------------------
     // STEP 5: Strict column mapping for subject ratings
+    // Import marks exactly as-is, preserve blanks as undefined
     // --------------------------------------------------------
-    const subjectRatings: Record<string, SkillRating> = {};
+    const subjectRatings: Record<string, SkillRatingOrUnselected> = {};
 
     for (const subject of detectedSubjects) {
       const colIndex = columnMapping.get(subject);
       if (colIndex !== undefined) {
         const cellValue = row[colIndex];
+        // Parse value - blank/NA becomes undefined (unselected)
         subjectRatings[subject] = parseSkillRating(cellValue);
       } else {
-        subjectRatings[subject] = 'Good'; // Default for missing columns
+        // Column not in sheet - default to undefined (unselected)
+        subjectRatings[subject] = undefined;
       }
     }
 
     // Also check for subjects in the full list that might be in the sheet
     for (const subject of SUBJECT_HEADERS) {
-      if (!subjectRatings[subject] && columnMapping.has(subject)) {
+      if (subjectRatings[subject] === undefined && columnMapping.has(subject)) {
         const colIndex = columnMapping.get(subject)!;
         subjectRatings[subject] = parseSkillRating(row[colIndex]);
       }
