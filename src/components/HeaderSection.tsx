@@ -1,41 +1,24 @@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { GraduationCap } from 'lucide-react';
-import { Language, LANGUAGES, Term, CLASS_OPTIONS, SECTION_OPTIONS } from '@/types/assessment';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { GraduationCap, Languages } from 'lucide-react';
 
 interface HeaderSectionProps {
   schoolName: string;
-  examName?: string;
   className: string;
-  section: string;
-  academicYear: string;
-  term: Term;
   totalStrength: number;
-  language: Language;
-  onUpdateSchoolInfo: (field: string, value: string | number) => void;
-  onChangeLanguage: (lang: Language) => void;
-  onChangeTerm?: (term: Term) => void;
+  language: 'english' | 'hindi';
+  onUpdateSchoolInfo: (field: 'schoolName' | 'className' | 'totalStrength', value: string | number) => void;
+  onToggleLanguage: () => void;
 }
 
 export function HeaderSection({
   schoolName,
-  examName,
   className,
-  section,
-  academicYear,
-  term,
   totalStrength,
   language,
   onUpdateSchoolInfo,
-  onChangeLanguage,
-  onChangeTerm,
+  onToggleLanguage,
 }: HeaderSectionProps) {
   return (
     <div className="card-elevated mb-6">
@@ -44,108 +27,62 @@ export function HeaderSection({
           <GraduationCap className="h-8 w-8 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">Cambridge Court Marksheet</h1>
-          <p className="text-muted-foreground">Consolidated Student Assessment System</p>
+          <h1 className="text-2xl font-heading font-bold text-foreground">Student Assessment Tool</h1>
+          <p className="text-muted-foreground">Generate AI-powered remarks for student evaluations</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-4">
-        {/* School Name */}
-        <div className="space-y-2 lg:col-span-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="space-y-2">
           <Label htmlFor="schoolName" className="text-sm font-medium">School Name</Label>
           <Input
             id="schoolName"
             value={schoolName}
             onChange={(e) => onUpdateSchoolInfo('schoolName', e.target.value)}
             className="input-field"
-            placeholder="Cambridge Court High School"
+            placeholder="Enter school name"
           />
         </div>
 
-        {/* Exam Name */}
-        <div className="space-y-2 lg:col-span-2">
-          <Label htmlFor="examName" className="text-sm font-medium">Exam Name</Label>
-          <Input
-            id="examName"
-            value={examName || ''}
-            onChange={(e) => onUpdateSchoolInfo('examName', e.target.value)}
-            className="input-field"
-            placeholder="Half Yearly Examination"
-          />
-        </div>
-
-        {/* Class Dropdown */}
         <div className="space-y-2">
           <Label htmlFor="className" className="text-sm font-medium">Class</Label>
-          <Select 
-            value={className || undefined} 
-            onValueChange={(v) => onUpdateSchoolInfo('className', v)}
-          >
-            <SelectTrigger className="input-field">
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent className="bg-popover border border-border z-50">
-              {CLASS_OPTIONS.filter(cls => cls && cls.trim() !== '').map(cls => (
-                <SelectItem key={cls} value={cls}>{cls}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Input
+            id="className"
+            value={className}
+            onChange={(e) => onUpdateSchoolInfo('className', e.target.value)}
+            className="input-field"
+            placeholder="e.g., Grade 5-A"
+          />
         </div>
 
-        {/* Section Dropdown */}
         <div className="space-y-2">
-          <Label htmlFor="section" className="text-sm font-medium">Section</Label>
-          <Select 
-            value={section || undefined} 
-            onValueChange={(v) => onUpdateSchoolInfo('section', v)}
-          >
-            <SelectTrigger className="input-field">
-              <SelectValue placeholder="Select" />
-            </SelectTrigger>
-            <SelectContent className="bg-popover border border-border z-50">
-              {SECTION_OPTIONS.filter(sec => sec && sec.trim() !== '').map(sec => (
-                <SelectItem key={sec} value={sec}>{sec}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label htmlFor="totalStrength" className="text-sm font-medium">Total Strength</Label>
+          <Input
+            id="totalStrength"
+            type="number"
+            value={totalStrength || ''}
+            onChange={(e) => onUpdateSchoolInfo('totalStrength', parseInt(e.target.value) || 0)}
+            className="input-field"
+            placeholder="Number of students"
+            min={0}
+          />
         </div>
 
-        {/* Term Selection */}
         <div className="space-y-2">
-          <Label htmlFor="term" className="text-sm font-medium">Term</Label>
-          <Select 
-            value={term} 
-            onValueChange={(v) => {
-              onUpdateSchoolInfo('term', v);
-              onChangeTerm?.(v as Term);
-            }}
-          >
-            <SelectTrigger className="input-field">
-              <SelectValue placeholder="Select term" />
-            </SelectTrigger>
-            <SelectContent className="bg-popover border border-border z-50">
-              <SelectItem value="Term 1">Term 1</SelectItem>
-              <SelectItem value="Term 2">Term 2</SelectItem>
-              <SelectItem value="Annual">Annual</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {/* Language */}
-        <div className="space-y-2">
-          <Label className="text-sm font-medium">Language</Label>
-          <Select value={language || undefined} onValueChange={(v) => onChangeLanguage(v as Language)}>
-            <SelectTrigger className="input-field">
-              <SelectValue placeholder="Select language" />
-            </SelectTrigger>
-            <SelectContent className="bg-popover border border-border z-50">
-              {LANGUAGES.filter(lang => lang.value && lang.value.trim() !== '').map(lang => (
-                <SelectItem key={lang.value} value={lang.value}>
-                  {lang.nativeLabel}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Label className="text-sm font-medium">Remark Language</Label>
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-muted">
+            <Languages className="h-5 w-5 text-muted-foreground" />
+            <span className={`text-sm ${language === 'english' ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>
+              English
+            </span>
+            <Switch
+              checked={language === 'hindi'}
+              onCheckedChange={onToggleLanguage}
+            />
+            <span className={`text-sm ${language === 'hindi' ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}>
+              हिंदी
+            </span>
+          </div>
         </div>
       </div>
     </div>
