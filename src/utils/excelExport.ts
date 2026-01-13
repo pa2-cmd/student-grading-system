@@ -1,48 +1,45 @@
 import * as XLSX from 'xlsx';
-import { AssessmentData, SKILL_VALUES } from '@/types/assessment';
+import { AssessmentData } from '@/types/assessment';
+
+// Exact column headers - must match import requirements
+const COLUMN_HEADERS = [
+  'S.No',
+  'Student Name',
+  'Speaking & Listening Skills',
+  'Writing Skills',
+  'Vocabulary',
+  'Grammar Usage',
+  'Reading Comprehension',
+  'Total',
+  'Remarks'
+];
 
 export function exportToExcel(data: AssessmentData) {
   // Create workbook
   const wb = XLSX.utils.book_new();
 
-  // Prepare header rows - exact structure as specified
-  const headerRows = [
-    [data.schoolName],
-    [`Class: ${data.className}`, '', '', '', '', '', `Total Strength: ${data.totalStrength}`],
-    [], // Empty row
-    [
-      'S.No',
-      'Student Name',
-      'Speaking & Listening Skills',
-      'Writing Skills',
-      'Vocabulary',
-      'Grammar Usage',
-      'Reading Comprehension',
-      'Total',
-      'Remarks'
-    ],
-  ];
+  // ROW 1: Exact column headers (no extra rows, no merged cells)
+  const rows: any[][] = [COLUMN_HEADERS];
 
-  // Prepare student data rows - preserve exact structure
-  const studentRows = data.students.map((student) => [
-    student.serialNo,
-    student.name,
-    student.speakingListening || '', // Preserve blank if empty
-    student.writing || '',
-    student.vocabulary || '',
-    student.grammar || '',
-    student.reading || '',
-    student.total, // Use stored total (imported or calculated)
-    student.remark || '', // Preserve blank if empty
-  ]);
+  // Data rows - preserve exact values, NA stays as NA, blank stays blank
+  data.students.forEach((student) => {
+    rows.push([
+      student.serialNo,
+      student.name || '',
+      student.speakingListening || '',
+      student.writing || '',
+      student.vocabulary || '',
+      student.grammar || '',
+      student.reading || '',
+      student.total !== null && student.total !== undefined ? student.total : '',
+      student.remark || '',
+    ]);
+  });
 
-  // Combine all rows
-  const allRows = [...headerRows, ...studentRows];
+  // Create worksheet from array - clean, no merged cells
+  const ws = XLSX.utils.aoa_to_sheet(rows);
 
-  // Create worksheet
-  const ws = XLSX.utils.aoa_to_sheet(allRows);
-
-  // Set column widths
+  // Set column widths for readability (does not affect import)
   ws['!cols'] = [
     { wch: 6 },   // S.No
     { wch: 25 },  // Student Name
@@ -55,23 +52,24 @@ export function exportToExcel(data: AssessmentData) {
     { wch: 50 },  // Remarks
   ];
 
-  // Merge cells for school name header
-  ws['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } }, // School name across all columns
-  ];
-
-  // Freeze the top row (header row at row 4, which is index 3)
-  ws['!freeze'] = { xSplit: 0, ySplit: 4 };
-  
-  // Alternative freeze pane syntax for better compatibility
-  if (!ws['!views']) ws['!views'] = [];
-  ws['!views'].push({ state: 'frozen', ySplit: 4 });
-
   // Add worksheet to workbook
   XLSX.utils.book_append_sheet(wb, ws, 'Assessment');
 
+  // Create metadata sheet with school info (separate from data)
+  const metaRows = [
+    ['School Name', data.schoolName],
+    ['Class', data.className],
+    ['Total Strength', data.totalStrength],
+    ['Export Date', new Date().toISOString().split('T')[0]],
+  ];
+  const metaWs = XLSX.utils.aoa_to_sheet(metaRows);
+  metaWs['!cols'] = [{ wch: 15 }, { wch: 40 }];
+  XLSX.utils.book_append_sheet(wb, metaWs, 'Info');
+
   // Generate filename
-  const filename = `${data.schoolName.replace(/\s+/g, '_')}_${data.className.replace(/\s+/g, '_')}_Assessment_${new Date().toISOString().split('T')[0]}.xlsx`;
+  const safeName = (data.schoolName || 'School').replace(/[^a-zA-Z0-9]/g, '_');
+  const safeClass = (data.className || 'Class').replace(/[^a-zA-Z0-9]/g, '_');
+  const filename = `${safeName}_${safeClass}_Assessment_${new Date().toISOString().split('T')[0]}.xlsx`;
 
   // Save file
   XLSX.writeFile(wb, filename);

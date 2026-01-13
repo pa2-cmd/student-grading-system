@@ -1,19 +1,13 @@
 import * as XLSX from 'xlsx';
-import { Student, SkillRating, SKILL_OPTIONS } from '@/types/assessment';
+import { Student, SkillRating } from '@/types/assessment';
 
 export interface ImportResult {
   students: Student[];
   count: number;
 }
 
-export interface ValidationError {
-  type: 'missing_columns' | 'invalid_columns' | 'structure_error';
-  message: string;
-  details?: string[];
-}
-
-// Exact required columns in order
-const REQUIRED_COLUMNS = [
+// Exact required column headers
+const REQUIRED_HEADERS = [
   'S.No',
   'Student Name',
   'Speaking & Listening Skills',
@@ -25,56 +19,83 @@ const REQUIRED_COLUMNS = [
   'Remarks'
 ];
 
-// Column name aliases for flexible matching
-const COLUMN_ALIASES: Record<string, string[]> = {
-  'S.No': ['s.no', 'sno', 's. no', 'serial', 'sr.no', 'sr no', 'sl.no', 'sl no', '#'],
-  'Student Name': ['student name', 'name', 'student', 'studentname'],
-  'Speaking & Listening Skills': ['speaking & listening skills', 'speaking and listening skills', 'speaking & listening', 'speaking/listening', 'speaking'],
-  'Writing Skills': ['writing skills', 'writing', 'writingskills'],
-  'Vocabulary': ['vocabulary', 'vocab'],
-  'Grammar Usage': ['grammar usage', 'grammar', 'grammarusage'],
-  'Reading Comprehension': ['reading comprehension', 'reading', 'readingcomprehension'],
-  'Total': ['total', 'sum', 'score', 'total score'],
-  'Remarks': ['remarks', 'remark', 'comment', 'comments', 'observation', 'observations']
-};
-
-function normalizeColumnName(name: string): string {
-  return name.toLowerCase().trim();
+// Normalize header: trim, remove invisible chars, normalize unicode spaces
+function normalizeHeader(header: any): string {
+  if (header === null || header === undefined) return '';
+  return String(header)
+    .replace(/[\r\n\t]/g, '') // Remove line breaks and tabs
+    .replace(/\u00A0/g, ' ')  // Replace non-breaking space with regular space
+    .replace(/\s+/g, ' ')     // Collapse multiple spaces
+    .trim();
 }
 
-function matchColumn(headerName: string): string | null {
-  const normalized = normalizeColumnName(headerName);
-  
-  for (const [standardName, aliases] of Object.entries(COLUMN_ALIASES)) {
-    if (aliases.includes(normalized) || normalizeColumnName(standardName) === normalized) {
-      return standardName;
-    }
-  }
-  return null;
+// Check if a value should be treated as blank/NA
+function isBlankOrNA(value: any): boolean {
+  if (value === null || value === undefined) return true;
+  const str = String(value).trim().toUpperCase();
+  return str === '' || str === 'NA' || str === 'N/A';
 }
 
-function parseSkillValue(value: any): SkillRating | '' {
-  if (value === undefined || value === null || value === '') {
-    return '';
+// Parse skill value - preserve NA as empty, map valid values
+function parseSkillValue(value: any): SkillRating {
+  if (isBlankOrNA(value)) {
+    return 'Good'; // Default for blank/NA
   }
   
   const strValue = String(value).trim().toLowerCase();
   
-  // Match exact values
   if (strValue === 'good' || strValue === '2') return 'Good';
   if (strValue === 'average' || strValue === 'avg' || strValue === '1') return 'Average';
   if (strValue === 'needs improvement' || strValue === 'ni' || strValue === '0') return 'Needs Improvement';
   
-  return '';
+  // If exact match with proper case
+  if (value === 'Good') return 'Good';
+  if (value === 'Average') return 'Average';
+  if (value === 'Needs Improvement') return 'Needs Improvement';
+  
+  return 'Good'; // Default fallback
 }
 
+// Parse total - preserve as-is, handle NA/blank
 function parseTotal(value: any): number | null {
-  if (value === undefined || value === null || value === '') {
+  if (isBlankOrNA(value)) {
     return null;
   }
-  
   const num = Number(value);
   return isNaN(num) ? null : num;
+}
+
+// Find header row in sheet (first row with recognizable headers)
+function findHeaderRow(rows: any[][]): { rowIndex: number; mapping: Record<string, number> } | null {
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const row = rows[i];
+    if (!row || row.length === 0) continue;
+    
+    const normalizedHeaders = row.map(normalizeHeader);
+    const mapping: Record<string, number> = {};
+    let matchCount = 0;
+    
+    // Try to match each required header
+    for (const reqHeader of REQUIRED_HEADERS) {
+      const index = normalizedHeaders.findIndex(h => h === reqHeader);
+      if (index !== -1) {
+        mapping[reqHeader] = index;
+        matchCount++;
+      }
+    }
+    
+    // If we found at least Student Name, consider it a valid header row
+    if (mapping['Student Name'] !== undefined) {
+      return { rowIndex: i, mapping };
+    }
+  }
+  
+  return null;
+}
+
+export interface ValidationError {
+  column?: string;
+  message: string;
 }
 
 export function validateAndParseFile(file: File): Promise<ImportResult> {
@@ -86,128 +107,145 @@ export function validateAndParseFile(file: File): Promise<ImportResult> {
         const data = e.target?.result;
         const workbook = XLSX.read(data, { type: 'array' });
         
-        // Get the first sheet
-        const sheetName = workbook.SheetNames[0];
+        // Get the first sheet (or 'Assessment' sheet if exists)
+        let sheetName = workbook.SheetNames[0];
+        if (workbook.SheetNames.includes('Assessment')) {
+          sheetName = 'Assessment';
+        }
         const sheet = workbook.Sheets[sheetName];
         
-        // Convert to JSON with headers
-        const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        // Convert to array of arrays
+        const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
         
-        if (rows.length < 2) {
-          reject(new Error('File must contain a header row and at least one data row.'));
+        if (rows.length < 1) {
+          reject(new Error('File is empty.'));
           return;
         }
         
-        // Get header row
-        const headerRow = rows[0].map(h => String(h || '').trim());
+        // Find header row
+        const headerResult = findHeaderRow(rows);
         
-        // Validate and map columns
-        const columnMapping: Record<string, number> = {};
-        const unmappedHeaders: string[] = [];
-        const foundColumns: string[] = [];
-        
-        headerRow.forEach((header, index) => {
-          if (!header) return;
-          
-          const standardName = matchColumn(header);
-          if (standardName) {
-            columnMapping[standardName] = index;
-            foundColumns.push(standardName);
-          } else {
-            unmappedHeaders.push(header);
-          }
-        });
-        
-        // Check for required columns (S.No and Student Name are mandatory)
-        const mandatoryColumns = ['Student Name'];
-        const missingMandatory = mandatoryColumns.filter(col => !foundColumns.includes(col));
-        
-        if (missingMandatory.length > 0) {
+        if (!headerResult) {
+          // Provide specific error about what headers were found
+          const firstRowHeaders = rows[0]?.map(normalizeHeader).filter(h => h) || [];
           reject(new Error(
-            `Missing required column(s): ${missingMandatory.join(', ')}. ` +
-            `Please ensure your file has the correct column headers.`
+            `Header mismatch: Could not find "Student Name" column.\n` +
+            `Found headers: ${firstRowHeaders.length > 0 ? firstRowHeaders.join(', ') : '(none)'}\n` +
+            `Required: ${REQUIRED_HEADERS.join(', ')}`
           ));
           return;
         }
         
-        // Parse student data
+        const { rowIndex: headerRowIndex, mapping } = headerResult;
+        
+        // Check which required columns are missing
+        const missingColumns = REQUIRED_HEADERS.filter(h => mapping[h] === undefined);
+        const foundColumns = REQUIRED_HEADERS.filter(h => mapping[h] !== undefined);
+        
+        // Student Name is mandatory
+        if (mapping['Student Name'] === undefined) {
+          reject(new Error(`Header mismatch: Missing required column "Student Name"`));
+          return;
+        }
+        
+        // Parse student data starting after header row
         const students: Student[] = [];
         
-        for (let i = 1; i < rows.length; i++) {
+        for (let i = headerRowIndex + 1; i < rows.length; i++) {
           const row = rows[i];
           if (!row || row.length === 0) continue;
           
-          // Get student name - skip if empty
-          const nameIndex = columnMapping['Student Name'];
-          const name = nameIndex !== undefined ? String(row[nameIndex] || '').trim() : '';
+          // Get student name
+          const nameValue = row[mapping['Student Name']];
+          const name = nameValue !== null && nameValue !== undefined 
+            ? String(nameValue).trim() 
+            : '';
           
-          if (!name) continue; // Skip rows without student names
+          if (!name || isBlankOrNA(nameValue)) continue; // Skip rows without names
           
-          // Get serial number from sheet or auto-generate
-          const serialIndex = columnMapping['S.No'];
-          const serialFromSheet = serialIndex !== undefined ? Number(row[serialIndex]) : NaN;
-          const serialNo = !isNaN(serialFromSheet) ? serialFromSheet : students.length + 1;
+          // Get serial number
+          const serialValue = mapping['S.No'] !== undefined ? row[mapping['S.No']] : undefined;
+          const serialFromSheet = serialValue !== undefined ? Number(serialValue) : NaN;
+          const serialNo = !isNaN(serialFromSheet) && serialFromSheet > 0 ? serialFromSheet : students.length + 1;
           
-          // Get skill values - preserve blanks
-          const speakingIndex = columnMapping['Speaking & Listening Skills'];
-          const writingIndex = columnMapping['Writing Skills'];
-          const vocabIndex = columnMapping['Vocabulary'];
-          const grammarIndex = columnMapping['Grammar Usage'];
-          const readingIndex = columnMapping['Reading Comprehension'];
+          // Get skill values
+          const speakingListening = mapping['Speaking & Listening Skills'] !== undefined
+            ? parseSkillValue(row[mapping['Speaking & Listening Skills']])
+            : 'Good';
+          const writing = mapping['Writing Skills'] !== undefined
+            ? parseSkillValue(row[mapping['Writing Skills']])
+            : 'Good';
+          const vocabulary = mapping['Vocabulary'] !== undefined
+            ? parseSkillValue(row[mapping['Vocabulary']])
+            : 'Good';
+          const grammar = mapping['Grammar Usage'] !== undefined
+            ? parseSkillValue(row[mapping['Grammar Usage']])
+            : 'Good';
+          const reading = mapping['Reading Comprehension'] !== undefined
+            ? parseSkillValue(row[mapping['Reading Comprehension']])
+            : 'Good';
           
-          const speakingValue = speakingIndex !== undefined ? parseSkillValue(row[speakingIndex]) : '';
-          const writingValue = writingIndex !== undefined ? parseSkillValue(row[writingIndex]) : '';
-          const vocabValue = vocabIndex !== undefined ? parseSkillValue(row[vocabIndex]) : '';
-          const grammarValue = grammarIndex !== undefined ? parseSkillValue(row[grammarIndex]) : '';
-          const readingValue = readingIndex !== undefined ? parseSkillValue(row[readingIndex]) : '';
+          // Get Total - preserve from sheet, don't recalculate
+          const totalValue = mapping['Total'] !== undefined ? row[mapping['Total']] : undefined;
+          const totalFromSheet = parseTotal(totalValue);
+          const hasImportedTotal = totalFromSheet !== null;
           
-          // Get Total from sheet - DO NOT recalculate
-          const totalIndex = columnMapping['Total'];
-          const totalFromSheet = totalIndex !== undefined ? parseTotal(row[totalIndex]) : null;
+          // Get Remarks - preserve verbatim
+          const remarksValue = mapping['Remarks'] !== undefined ? row[mapping['Remarks']] : undefined;
+          const remark = remarksValue !== null && remarksValue !== undefined && !isBlankOrNA(remarksValue)
+            ? String(remarksValue).trim()
+            : '';
+          const hasImportedRemark = remark !== '';
           
-          // Get Remarks from sheet - preserve verbatim
-          const remarksIndex = columnMapping['Remarks'];
-          const remarkFromSheet = remarksIndex !== undefined ? String(row[remarksIndex] || '').trim() : '';
+          // Calculate default total if not provided
+          const skillValues = { speakingListening, writing, vocabulary, grammar, reading };
+          const calculatedTotal = 
+            (speakingListening === 'Good' ? 2 : speakingListening === 'Average' ? 1 : 0) +
+            (writing === 'Good' ? 2 : writing === 'Average' ? 1 : 0) +
+            (vocabulary === 'Good' ? 2 : vocabulary === 'Average' ? 1 : 0) +
+            (grammar === 'Good' ? 2 : grammar === 'Average' ? 1 : 0) +
+            (reading === 'Good' ? 2 : reading === 'Average' ? 1 : 0);
           
           const student: Student = {
             id: crypto.randomUUID(),
             serialNo,
             name,
-            speakingListening: speakingValue || 'Good',
-            writing: writingValue || 'Good',
-            vocabulary: vocabValue || 'Good',
-            grammar: grammarValue || 'Good',
-            reading: readingValue || 'Good',
-            total: totalFromSheet !== null ? totalFromSheet : 10, // Use sheet value or default
-            remark: remarkFromSheet,
+            speakingListening,
+            writing,
+            vocabulary,
+            grammar,
+            reading,
+            total: hasImportedTotal ? totalFromSheet : calculatedTotal,
+            remark,
             isGeneratingRemark: false,
-            importedTotal: totalFromSheet !== null, // Track if total was imported
-            importedRemark: remarkFromSheet !== '', // Track if remark was imported
+            importedTotal: hasImportedTotal,
+            importedRemark: hasImportedRemark,
           };
           
           students.push(student);
         }
         
         if (students.length === 0) {
-          reject(new Error('No valid student data found in the file.'));
+          reject(new Error('No valid student data found. Ensure there are rows with student names below the header row.'));
           return;
         }
         
         resolve({ students, count: students.length });
       } catch (error) {
-        reject(new Error('Failed to parse file. Please ensure it is a valid CSV or Excel file with the correct structure.'));
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        reject(new Error(`Failed to parse file: ${message}`));
       }
     };
 
     reader.onerror = () => {
-      reject(new Error('Failed to read file.'));
+      reject(new Error('Failed to read file. Please try again.'));
     };
 
     reader.readAsArrayBuffer(file);
   });
 }
 
-// Keep legacy function for backward compatibility
+// Legacy function for backward compatibility
 export function parseStudentFile(file: File): Promise<ImportResult> {
   return validateAndParseFile(file);
 }
