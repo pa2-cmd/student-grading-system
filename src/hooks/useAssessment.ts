@@ -8,6 +8,7 @@ import {
   getDefaultAssessmentData,
   SKILL_VALUES 
 } from '@/types/assessment';
+import { parseStudentFile } from '@/utils/studentImport';
 
 const STORAGE_KEY = 'assessment-data';
 
@@ -147,6 +148,37 @@ export function useAssessment() {
     reader.readAsText(file);
   }, []);
 
+  const importStudents = useCallback(async (file: File): Promise<{ success: boolean; count: number; error?: string }> => {
+    try {
+      const result = await parseStudentFile(file);
+      if (result.count === 0) {
+        return { success: false, count: 0, error: 'No student names found in file.' };
+      }
+      
+      setData(prev => {
+        // Start serial numbers after existing students
+        const startSerial = prev.students.length;
+        const newStudents = result.students.map((s, i) => ({
+          ...s,
+          serialNo: startSerial + i + 1,
+        }));
+        
+        return {
+          ...prev,
+          students: [...prev.students, ...newStudents],
+        };
+      });
+      
+      return { success: true, count: result.count };
+    } catch (error) {
+      return { 
+        success: false, 
+        count: 0, 
+        error: error instanceof Error ? error.message : 'Failed to import file.' 
+      };
+    }
+  }, []);
+
   return {
     data,
     updateSchoolInfo,
@@ -158,5 +190,6 @@ export function useAssessment() {
     resetAll,
     exportJSON,
     importJSON,
+    importStudents,
   };
 }
