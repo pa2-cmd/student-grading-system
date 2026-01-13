@@ -23,9 +23,9 @@ const REQUIRED_HEADERS = [
 function normalizeHeader(header: any): string {
   if (header === null || header === undefined) return '';
   return String(header)
-    .replace(/[\r\n\t]/g, '') // Remove line breaks and tabs
-    .replace(/\u00A0/g, ' ')  // Replace non-breaking space with regular space
-    .replace(/\s+/g, ' ')     // Collapse multiple spaces
+    .replace(/[\r\n\t]/g, '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -36,11 +36,9 @@ function isBlankOrNA(value: any): boolean {
   return str === '' || str === 'NA' || str === 'N/A';
 }
 
-// Parse skill value - preserve NA as empty, map valid values
+// Parse skill value
 function parseSkillValue(value: any): SkillRating {
-  if (isBlankOrNA(value)) {
-    return 'Good'; // Default for blank/NA
-  }
+  if (isBlankOrNA(value)) return 'Good';
   
   const strValue = String(value).trim().toLowerCase();
   
@@ -48,24 +46,38 @@ function parseSkillValue(value: any): SkillRating {
   if (strValue === 'average' || strValue === 'avg' || strValue === '1') return 'Average';
   if (strValue === 'needs improvement' || strValue === 'ni' || strValue === '0') return 'Needs Improvement';
   
-  // If exact match with proper case
   if (value === 'Good') return 'Good';
   if (value === 'Average') return 'Average';
   if (value === 'Needs Improvement') return 'Needs Improvement';
   
-  return 'Good'; // Default fallback
+  return 'Good';
 }
 
-// Parse total - preserve as-is, handle NA/blank
+// Parse total
 function parseTotal(value: any): number | null {
-  if (isBlankOrNA(value)) {
-    return null;
-  }
+  if (isBlankOrNA(value)) return null;
   const num = Number(value);
   return isNaN(num) ? null : num;
 }
 
-// Find header row in sheet (first row with recognizable headers)
+// Parse S.No - PRESERVE EXACTLY AS-IS
+function parseSerialNo(value: any): number | string | null {
+  // If blank/undefined/null, return null (keep blank)
+  if (value === null || value === undefined || String(value).trim() === '') {
+    return null;
+  }
+  
+  // Try to parse as number first
+  const num = Number(value);
+  if (!isNaN(num)) {
+    return num;
+  }
+  
+  // Otherwise preserve as string (handles non-numeric S.No)
+  return String(value).trim();
+}
+
+// Find header row - match by column names
 function findHeaderRow(rows: any[][]): { rowIndex: number; mapping: Record<string, number> } | null {
   for (let i = 0; i < Math.min(rows.length, 10); i++) {
     const row = rows[i];
@@ -73,29 +85,21 @@ function findHeaderRow(rows: any[][]): { rowIndex: number; mapping: Record<strin
     
     const normalizedHeaders = row.map(normalizeHeader);
     const mapping: Record<string, number> = {};
-    let matchCount = 0;
     
-    // Try to match each required header
     for (const reqHeader of REQUIRED_HEADERS) {
       const index = normalizedHeaders.findIndex(h => h === reqHeader);
       if (index !== -1) {
         mapping[reqHeader] = index;
-        matchCount++;
       }
     }
     
-    // If we found at least Student Name, consider it a valid header row
+    // Valid header row if we find "Student Name"
     if (mapping['Student Name'] !== undefined) {
       return { rowIndex: i, mapping };
     }
   }
   
   return null;
-}
-
-export interface ValidationError {
-  column?: string;
-  message: string;
 }
 
 export function validateAndParseFile(file: File): Promise<ImportResult> {
@@ -107,14 +111,12 @@ export function validateAndParseFile(file: File): Promise<ImportResult> {
         const data = e.target?.result;
         const workbook = XLSX.read(data, { type: 'array' });
         
-        // Get the first sheet (or 'Assessment' sheet if exists)
         let sheetName = workbook.SheetNames[0];
         if (workbook.SheetNames.includes('Assessment')) {
           sheetName = 'Assessment';
         }
         const sheet = workbook.Sheets[sheetName];
         
-        // Convert to array of arrays
         const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
         
         if (rows.length < 1) {
@@ -126,7 +128,6 @@ export function validateAndParseFile(file: File): Promise<ImportResult> {
         const headerResult = findHeaderRow(rows);
         
         if (!headerResult) {
-          // Provide specific error about what headers were found
           const firstRowHeaders = rows[0]?.map(normalizeHeader).filter(h => h) || [];
           reject(new Error(
             `Header mismatch: Could not find "Student Name" column.\n` +
@@ -138,22 +139,22 @@ export function validateAndParseFile(file: File): Promise<ImportResult> {
         
         const { rowIndex: headerRowIndex, mapping } = headerResult;
         
-        // Check which required columns are missing
-        const missingColumns = REQUIRED_HEADERS.filter(h => mapping[h] === undefined);
-        const foundColumns = REQUIRED_HEADERS.filter(h => mapping[h] !== undefined);
-        
-        // Student Name is mandatory
         if (mapping['Student Name'] === undefined) {
           reject(new Error(`Header mismatch: Missing required column "Student Name"`));
           return;
         }
         
-        // Parse student data starting after header row
+        // Parse data starting IMMEDIATELY after header row (no skipping)
         const students: Student[] = [];
+        const dataStartRow = headerRowIndex + 1;
         
-        for (let i = headerRowIndex + 1; i < rows.length; i++) {
+        for (let i = dataStartRow; i < rows.length; i++) {
           const row = rows[i];
-          if (!row || row.length === 0) continue;
+          
+          // Skip completely empty rows only
+          if (!row || row.every(cell => cell === null || cell === undefined || String(cell).trim() === '')) {
+            continue;
+          }
           
           // Get student name
           const nameValue = row[mapping['Student Name']];
@@ -161,14 +162,14 @@ export function validateAndParseFile(file: File): Promise<ImportResult> {
             ? String(nameValue).trim() 
             : '';
           
-          if (!name || isBlankOrNA(nameValue)) continue; // Skip rows without names
+          // Skip if name is blank/NA
+          if (!name || isBlankOrNA(nameValue)) continue;
           
-          // Get serial number
-          const serialValue = mapping['S.No'] !== undefined ? row[mapping['S.No']] : undefined;
-          const serialFromSheet = serialValue !== undefined ? Number(serialValue) : NaN;
-          const serialNo = !isNaN(serialFromSheet) && serialFromSheet > 0 ? serialFromSheet : students.length + 1;
+          // S.No: PRESERVE EXACTLY from sheet - DO NOT auto-generate
+          const serialNoValue = mapping['S.No'] !== undefined ? row[mapping['S.No']] : null;
+          const serialNo = parseSerialNo(serialNoValue);
           
-          // Get skill values
+          // Skills
           const speakingListening = mapping['Speaking & Listening Skills'] !== undefined
             ? parseSkillValue(row[mapping['Speaking & Listening Skills']])
             : 'Good';
@@ -185,20 +186,12 @@ export function validateAndParseFile(file: File): Promise<ImportResult> {
             ? parseSkillValue(row[mapping['Reading Comprehension']])
             : 'Good';
           
-          // Get Total - preserve from sheet, don't recalculate
+          // Total - preserve from sheet
           const totalValue = mapping['Total'] !== undefined ? row[mapping['Total']] : undefined;
           const totalFromSheet = parseTotal(totalValue);
           const hasImportedTotal = totalFromSheet !== null;
           
-          // Get Remarks - preserve verbatim
-          const remarksValue = mapping['Remarks'] !== undefined ? row[mapping['Remarks']] : undefined;
-          const remark = remarksValue !== null && remarksValue !== undefined && !isBlankOrNA(remarksValue)
-            ? String(remarksValue).trim()
-            : '';
-          const hasImportedRemark = remark !== '';
-          
           // Calculate default total if not provided
-          const skillValues = { speakingListening, writing, vocabulary, grammar, reading };
           const calculatedTotal = 
             (speakingListening === 'Good' ? 2 : speakingListening === 'Average' ? 1 : 0) +
             (writing === 'Good' ? 2 : writing === 'Average' ? 1 : 0) +
@@ -206,9 +199,16 @@ export function validateAndParseFile(file: File): Promise<ImportResult> {
             (grammar === 'Good' ? 2 : grammar === 'Average' ? 1 : 0) +
             (reading === 'Good' ? 2 : reading === 'Average' ? 1 : 0);
           
+          // Remarks - preserve verbatim
+          const remarksValue = mapping['Remarks'] !== undefined ? row[mapping['Remarks']] : undefined;
+          const remark = remarksValue !== null && remarksValue !== undefined && !isBlankOrNA(remarksValue)
+            ? String(remarksValue).trim()
+            : '';
+          const hasImportedRemark = remark !== '';
+          
           const student: Student = {
             id: crypto.randomUUID(),
-            serialNo,
+            serialNo, // Preserved exactly from sheet
             name,
             speakingListening,
             writing,
@@ -245,7 +245,6 @@ export function validateAndParseFile(file: File): Promise<ImportResult> {
   });
 }
 
-// Legacy function for backward compatibility
 export function parseStudentFile(file: File): Promise<ImportResult> {
   return validateAndParseFile(file);
 }

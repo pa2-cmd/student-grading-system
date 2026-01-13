@@ -3,7 +3,7 @@ export type SkillValue = 2 | 1 | 0;
 
 export interface Student {
   id: string;
-  serialNo: number;
+  serialNo: number | string | null; // Preserve exact S.No from import (can be any value)
   name: string;
   speakingListening: SkillRating;
   writing: SkillRating;
@@ -13,8 +13,8 @@ export interface Student {
   total: number;
   remark: string;
   isGeneratingRemark: boolean;
-  importedTotal?: boolean; // Track if total was imported from file
-  importedRemark?: boolean; // Track if remark was imported from file
+  importedTotal?: boolean;
+  importedRemark?: boolean;
 }
 
 export interface AssessmentData {
@@ -43,7 +43,7 @@ export function calculateTotal(student: Omit<Student, 'total' | 'remark' | 'isGe
   );
 }
 
-export function createEmptyStudent(serialNo: number): Student {
+export function createEmptyStudent(serialNo: number | string | null): Student {
   return {
     id: crypto.randomUUID(),
     serialNo,
