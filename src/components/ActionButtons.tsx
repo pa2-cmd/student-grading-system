@@ -6,7 +6,8 @@ import {
   Upload, 
   RotateCcw, 
   Sparkles,
-  Loader2 
+  Loader2,
+  Users
 } from 'lucide-react';
 import { useRef } from 'react';
 
@@ -15,6 +16,7 @@ interface ActionButtonsProps {
   onExportExcel: () => void;
   onExportJSON: () => void;
   onImportJSON: (file: File) => void;
+  onImportStudents: (file: File) => void;
   onReset: () => void;
   onGenerateAllRemarks: () => void;
   isGeneratingAll: boolean;
@@ -26,21 +28,35 @@ export function ActionButtons({
   onExportExcel,
   onExportJSON,
   onImportJSON,
+  onImportStudents,
   onReset,
   onGenerateAllRemarks,
   isGeneratingAll,
   studentCount,
 }: ActionButtonsProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const jsonInputRef = useRef<HTMLInputElement>(null);
+  const studentInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
+  const handleImportJSONClick = () => {
+    jsonInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportStudentsClick = () => {
+    studentInputRef.current?.click();
+  };
+
+  const handleJSONChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       onImportJSON(file);
+      e.target.value = '';
+    }
+  };
+
+  const handleStudentsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      onImportStudents(file);
       e.target.value = '';
     }
   };
@@ -50,6 +66,15 @@ export function ActionButtons({
       <Button onClick={onAddStudent} className="btn-primary gap-2">
         <Plus className="h-4 w-4" />
         Add Student
+      </Button>
+
+      <Button 
+        onClick={handleImportStudentsClick} 
+        variant="outline" 
+        className="gap-2 border-accent text-accent-foreground bg-accent/10 hover:bg-accent hover:text-accent-foreground"
+      >
+        <Users className="h-4 w-4" />
+        Import Names (CSV/Excel)
       </Button>
 
       <Button 
@@ -79,16 +104,24 @@ export function ActionButtons({
         Backup JSON
       </Button>
 
-      <Button onClick={handleImportClick} variant="outline" className="gap-2">
+      <Button onClick={handleImportJSONClick} variant="outline" className="gap-2">
         <Upload className="h-4 w-4" />
         Import JSON
       </Button>
 
       <input
-        ref={fileInputRef}
+        ref={jsonInputRef}
         type="file"
         accept=".json"
-        onChange={handleFileChange}
+        onChange={handleJSONChange}
+        className="hidden"
+      />
+
+      <input
+        ref={studentInputRef}
+        type="file"
+        accept=".csv,.xlsx,.xls"
+        onChange={handleStudentsChange}
         className="hidden"
       />
 

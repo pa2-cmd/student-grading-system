@@ -20,6 +20,7 @@ const Index = () => {
     resetAll,
     exportJSON,
     importJSON,
+    importStudents,
   } = useAssessment();
 
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
@@ -100,6 +101,15 @@ const Index = () => {
     toast.success('Data imported successfully!');
   }, [importJSON]);
 
+  const handleImportStudents = useCallback(async (file: File) => {
+    const result = await importStudents(file);
+    if (result.success) {
+      toast.success(`Imported ${result.count} student names!`);
+    } else {
+      toast.error(result.error || 'Failed to import students');
+    }
+  }, [importStudents]);
+
   return (
     <div className="min-h-screen bg-background py-8 px-4 sm:px-6 lg:px-8">
       <div className="max-w-[1600px] mx-auto">
@@ -117,6 +127,7 @@ const Index = () => {
           onExportExcel={handleExportExcel}
           onExportJSON={exportJSON}
           onImportJSON={handleImportJSON}
+          onImportStudents={handleImportStudents}
           onReset={handleReset}
           onGenerateAllRemarks={handleGenerateAllRemarks}
           isGeneratingAll={isGeneratingAll}
