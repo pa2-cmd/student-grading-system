@@ -6,7 +6,7 @@ import { AssessmentTable } from '@/components/AssessmentTable';
 import { SubjectSelector } from '@/components/SubjectSelector';
 import { exportToExcel } from '@/utils/excelExport';
 import { exportToPDF } from '@/utils/pdfExport';
-import { importStudentsFromExcel, createStudentsFromImport } from '@/utils/excelImport';
+import { importStudentsFromExcel } from '@/utils/excelImport';
 import { generateRemark } from '@/utils/remarkGenerator';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -106,27 +106,55 @@ const Index = () => {
     toast.success('PDF file exported successfully!');
   }, [data]);
 
-  // Import students from Excel file
+  // Import students from Excel file with intelligent structure analysis
   const handleImportExcel = useCallback(async (file: File) => {
     try {
-      toast.info('Reading Excel file...');
-      const importedStudents = await importStudentsFromExcel(file);
-      const students = createStudentsFromImport(importedStudents, data.selectedSubjects);
+      toast.info('Analyzing Excel structure...');
       
-      // If className was detected, update it
-      const firstClassName = importedStudents.find(s => s.className)?.className;
-      if (firstClassName) {
-        updateSchoolInfo('className', firstClassName);
+      // Use intelligent import that detects header row location
+      const result = await importStudentsFromExcel(file);
+      
+      // Handle import errors
+      if (!result.success) {
+        result.errors.forEach(error => toast.error(error));
+        return;
       }
       
-      importStudents(students);
-      updateSchoolInfo('totalStrength', students.length);
-      toast.success(`Successfully imported ${students.length} students from Excel!`);
+      // Show any warnings
+      result.warnings.forEach(warning => toast.warning(warning));
+      
+      // Apply extracted metadata if found
+      if (result.metadata.schoolName) {
+        updateSchoolInfo('schoolName', result.metadata.schoolName);
+      }
+      if (result.metadata.className) {
+        updateSchoolInfo('className', result.metadata.className);
+      }
+      
+      // Update selected subjects if new ones were detected
+      if (result.detectedSubjects.length > 0) {
+        // Merge detected subjects with existing ones
+        const mergedSubjects = [...new Set([...result.detectedSubjects])];
+        if (mergedSubjects.length > 0) {
+          updateSelectedSubjects(mergedSubjects);
+        }
+      }
+      
+      // Import the students
+      importStudents(result.students);
+      updateSchoolInfo('totalStrength', result.students.length);
+      
+      toast.success(
+        `Successfully imported ${result.students.length} students! ` +
+        (result.detectedSubjects.length > 0 
+          ? `Detected ${result.detectedSubjects.length} subject columns.`
+          : '')
+      );
     } catch (error) {
       console.error('Excel import error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to import Excel file');
     }
-  }, [data.selectedSubjects, importStudents, updateSchoolInfo]);
+  }, [importStudents, updateSchoolInfo, updateSelectedSubjects]);
 
   // Reset confirmation
   const handleReset = useCallback(() => {
