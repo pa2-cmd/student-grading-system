@@ -108,7 +108,7 @@ export function StudentRow({
       </td>
       
       {/* AI Remarks - Editable */}
-      <td className="min-w-[280px]">
+      <td className="min-w-[420px]">
         <div className="flex items-start gap-2">
           <div className="flex-1">
             {isEditingRemark ? (

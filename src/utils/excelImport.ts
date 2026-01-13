@@ -6,6 +6,7 @@ import { Student, SkillRating, SkillRatingOrUnselected, calculateTotal, SKILL_OP
 // ============================================================
 const EXPECTED_HEADERS = [
   'S.No',
+  'Roll No',
   'Student Name',
   'Speaking & Listening Skills',
   'Writing Skills',
@@ -285,42 +286,60 @@ function extractMetadata(metadataRows: any[][]): ExtractedMetadata {
  * - Never convert blank to zero or default
  */
 function parseSkillRating(value: any): SkillRatingOrUnselected {
-  // --------------------------------------------------------
-  // Handle BLANK or NA values → Return undefined (unselected)
-  // --------------------------------------------------------
-  if (value === null || value === undefined || value === '') {
-    return undefined; // Unselected - DO NOT default to any value
+  // BLANK / NA values → undefined (unselected)
+  if (value === null || value === undefined || value === '') return undefined;
+
+  // Numbers must be preserved (0 is valid)
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    if (value >= 2) return 'Good';
+    if (value === 1) return 'Average';
+    if (value === 0) return 'Needs Improvement';
+    return undefined;
   }
 
-  const stringValue = String(value).trim().toLowerCase();
-  
-  // Check for explicit NA/blank markers
-  if (stringValue === 'na' || stringValue === 'n/a' || stringValue === '-' || 
-      stringValue === 'blank' || stringValue === 'nil' || stringValue === '') {
-    return undefined; // Unselected state
+  const raw = String(value).trim();
+  const stringValue = raw.toLowerCase();
+
+  // Explicit NA/blank markers
+  if (
+    stringValue === 'na' ||
+    stringValue === 'n/a' ||
+    stringValue === '-' ||
+    stringValue === 'blank' ||
+    stringValue === 'nil'
+  ) {
+    return undefined;
   }
 
-  // --------------------------------------------------------
-  // Handle EXISTING marks values → Import exactly as-is
-  // --------------------------------------------------------
-  
-  // Check for exact rating matches
-  if (stringValue === 'good' || stringValue === '2') return 'Good';
-  if (stringValue === 'average' || stringValue === 'avg' || stringValue === '1') return 'Average';
-  if (stringValue.includes('needs') || stringValue.includes('improvement') || 
-      stringValue === '0' || stringValue === 'ni') return 'Needs Improvement';
-
-  // Try to parse as number (for numeric marks)
-  const numValue = Number(value);
-  if (!isNaN(numValue)) {
-    if (numValue >= 2) return 'Good';
-    if (numValue >= 1) return 'Average';
-    if (numValue === 0) return 'Needs Improvement';
-    // If it's some other number, try to interpret
-    return undefined; // Unknown numeric value - let user select
+  // Handle exported format like "Good (2)" / "Average (1)" / "Needs Improvement (0)"
+  // and other mixed text like "Good-2".
+  const numInText = raw.match(/\b([0-2])\b/);
+  if (numInText) {
+    const n = Number(numInText[1]);
+    if (n === 2) return 'Good';
+    if (n === 1) return 'Average';
+    if (n === 0) return 'Needs Improvement';
   }
 
-  // Unknown text value - return undefined for user to select
+  // Text categories (accept common synonyms; NEVER treat as empty)
+  if (stringValue.includes('good') || stringValue.includes('strong')) return 'Good';
+  if (stringValue.includes('average') || stringValue.includes('avg') || stringValue.includes('develop')) return 'Average';
+  if (
+    stringValue.includes('needs') ||
+    stringValue.includes('improvement') ||
+    stringValue.includes('poor') ||
+    stringValue.includes('bad') ||
+    stringValue.includes('weak')
+  ) {
+    return 'Needs Improvement';
+  }
+
+  // Pure numeric strings
+  if (stringValue === '2') return 'Good';
+  if (stringValue === '1') return 'Average';
+  if (stringValue === '0') return 'Needs Improvement';
+
+  // Unknown value → keep unselected (user can correct)
   return undefined;
 }
 
@@ -389,9 +408,12 @@ function importStudentData(
     }
 
     // --------------------------------------------------------
-    // STEP 4: Preserve S.No exactly as in sheet
+    // STEP 4: Preserve S.No exactly as in sheet (0 is valid)
     // --------------------------------------------------------
-    const serialNo = Number(sNoValue) || rowIndex - dataStartRowIndex + 1;
+    const parsedSerial = typeof sNoValue === 'number' ? sNoValue : Number(String(sNoValue).trim());
+    const serialNo = Number.isNaN(parsedSerial)
+      ? rowIndex - dataStartRowIndex + 1
+      : parsedSerial;
 
     // --------------------------------------------------------
     // STEP 5: Strict column mapping for subject ratings
@@ -419,10 +441,16 @@ function importStudentData(
       }
     }
 
-    // Get existing remark if present
+    // Get existing remark if present (import full string as-is)
     const remarkColIndex = columnMapping.get('Remarks');
-    const existingRemark = remarkColIndex !== undefined 
-      ? String(row[remarkColIndex] || '').trim()
+    const existingRemark = remarkColIndex !== undefined
+      ? String(row[remarkColIndex] ?? '').trim()
+      : '';
+
+    // Roll No (if present) must be imported exactly; otherwise keep blank
+    const rollNoColIndex = columnMapping.get('Roll No');
+    const rollNumber = rollNoColIndex !== undefined
+      ? String(row[rollNoColIndex] ?? '').trim()
       : '';
 
     // Create student object
@@ -430,7 +458,7 @@ function importStudentData(
       id: crypto.randomUUID(),
       serialNo,
       name: studentName,
-      rollNumber: String(serialNo), // Use S.No as roll number
+      rollNumber,
       subjectRatings,
       total: calculateTotal(subjectRatings),
       remark: existingRemark,
