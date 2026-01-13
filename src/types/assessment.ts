@@ -88,6 +88,7 @@ export interface Student {
   motherName: string;         // Mother Name column
   dob: string;                // DOB column
   gender: string;             // Gender column (M/F)
+  studentClassName?: string;  // Class column - imported directly from sheet
   photo?: string;
   
   // Subject marks - Cambridge Court format (Theory + Internal/Oral + Total)
@@ -95,7 +96,7 @@ export interface Student {
   subjectMarksDetail: Record<string, SubjectMarksDetail>; // Detailed marks (Theory/Oral/Total)
   subjectRatings: Record<string, SkillRating>;
   
-  // NA subjects (e.g., French) - excluded from calculations
+  // NA subjects (e.g., French, Sanskrit) - excluded from calculations
   naSubjects?: string[];
   
   // Term-wise data storage

@@ -11,7 +11,7 @@ export interface ImportedStudent {
   motherName?: string;
   dob?: string;
   gender?: string;
-  className?: string;
+  className?: string; // Class field imported from Excel
   section?: string;
   // Subject marks in grouped format (Theory, Oral/Internal, Total)
   subjectMarksDetail?: Record<string, { theory: number | null; oral: number | null; total: number | null; isNA?: boolean }>;
@@ -27,7 +27,7 @@ export interface ImportedStudent {
   remarks?: string;
   // Store original raw headers for exact export
   rawHeaders?: string[];
-  // Track NA subjects (e.g., French) for exclusion from calculations
+  // Track NA subjects (e.g., French, Sanskrit) for exclusion from calculations
   naSubjects?: string[];
 }
 
@@ -139,6 +139,11 @@ const DOB_PATTERNS = [
 
 const GENDER_PATTERNS = [
   'gender', 'sex', 'm/f'
+];
+
+// Class/Grade patterns - for importing class value from sheet
+const CLASS_PATTERNS = [
+  'class', 'grade', 'std', 'standard', 'year', 'form'
 ];
 
 const ATTENDANCE_COMBINED_PATTERNS = [
@@ -558,6 +563,7 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
         const motherNameCol = findColumnByPatterns(headerRow, MOTHER_NAME_PATTERNS);
         const dobCol = findColumnByPatterns(headerRow, DOB_PATTERNS);
         const genderCol = findColumnByPatterns(headerRow, GENDER_PATTERNS);
+        const classCol = findColumnByPatterns(headerRow, CLASS_PATTERNS);
         const attendanceCol = findColumnByPatterns(headerRow, ATTENDANCE_COMBINED_PATTERNS);
         const grandTotalCol = findColumnByPatterns(headerRow, GRAND_TOTAL_PATTERNS);
         const maxGrandTotalCol = findColumnByPatterns(headerRow, MAX_GRAND_TOTAL_PATTERNS);
@@ -588,7 +594,7 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
         
         // Build excluded indices
         const excludeIndices = new Set<number>();
-        [serialCol, nameCol, enrollmentCol, fatherNameCol, motherNameCol, dobCol, genderCol,
+        [serialCol, nameCol, enrollmentCol, fatherNameCol, motherNameCol, dobCol, genderCol, classCol,
          attendanceCol, grandTotalCol, maxGrandTotalCol, percentageCol, gradeCol, remarksCol].forEach(col => {
           if (col) excludeIndices.add(col.index);
         });
@@ -646,9 +652,11 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
           const motherName = motherNameCol ? String(row[motherNameCol.index] || '').trim() : undefined;
           const dob = dobCol ? String(row[dobCol.index] || '').trim() : undefined;
           const gender = genderCol ? String(row[genderCol.index] || '').trim() : undefined;
+          // Import Class directly from sheet - display as-is (blank if blank)
+          const studentClassName = classCol ? String(row[classCol.index] || '').trim() : undefined;
           
         // --- Subject Marks (grouped format) ---
-          // Track which subjects are NA (e.g., French)
+          // Track which subjects are NA (e.g., French, Sanskrit) - OPTIONAL subjects
           const subjectMarksDetail: Record<string, { theory: number | null; oral: number | null; total: number | null; isNA?: boolean }> = {};
           const subjectMarks: Record<string, number | null> = {};
           const naSubjects: Set<string> = new Set();
@@ -659,7 +667,7 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
             const oralParsed = group.oralCol !== undefined ? parseMarksWithNA(row[group.oralCol]) : { value: null, isNA: false };
             const totalParsed = group.totalCol !== undefined ? parseMarksWithNA(row[group.totalCol]) : { value: null, isNA: false };
             
-            // Check if this subject is NA (e.g., French marked as NA)
+            // Check if this subject is NA (e.g., French or Sanskrit marked as NA)
             const isNA = theoryParsed.isNA || oralParsed.isNA || totalParsed.isNA;
             
             if (isNA) {
@@ -718,6 +726,7 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
             motherName,
             dob,
             gender,
+            className: studentClassName, // Import Class value directly from sheet
             subjectMarksDetail: Object.keys(subjectMarksDetail).length > 0 ? subjectMarksDetail : undefined,
             subjectMarks: Object.keys(subjectMarks).length > 0 ? subjectMarks : undefined,
             attendancePresent: attendance.present,
@@ -728,7 +737,7 @@ export async function importStudentsFromExcel(file: File): Promise<ExcelImportRe
             percentageMarks: percentageMarks ?? undefined,
             grade,
             remarks,
-            // Track NA subjects for exclusion from calculations
+            // Track NA subjects (French, Sanskrit) for exclusion from calculations
             naSubjects: naSubjects.size > 0 ? Array.from(naSubjects) : undefined,
           });
         }
@@ -948,6 +957,7 @@ export function createStudentsFromImport(
         motherName: imp.motherName || '',
         dob: imp.dob || '',
         gender: imp.gender || '',
+        studentClassName: imp.className, // Import Class value directly from sheet - display as-is
         subjectMarks,
         subjectMarksDetail,
         subjectRatings,
@@ -961,7 +971,7 @@ export function createStudentsFromImport(
         attendancePercentage: imp.attendancePercentage || 0,
         remark: imp.remarks || '',
         moodRating: getMoodFromPerformance(percentage),
-        // Store NA subjects list for reference
+        // Store NA subjects list for reference (French, Sanskrit)
         naSubjects: imp.naSubjects,
       };
     });

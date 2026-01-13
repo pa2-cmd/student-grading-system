@@ -35,6 +35,8 @@ export async function exportStudentPDF({
   term = 'Term 1',
   totalStudents
 }: ExportOptions): Promise<void> {
+  // Use student's imported className from sheet if available, fallback to prop
+  const displayClassName = student.studentClassName || className || '-';
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -113,10 +115,19 @@ export async function exportStudentPDF({
     ? `${student.percentage}%` 
     : '-';
   const displayGrade = student.grade || '-';
+  
+  // Use studentClassName imported from sheet, fallback to prop className
+  const displayClassSection = displayClassName !== '-' && section 
+    ? `${displayClassName} - ${section}` 
+    : displayClassName !== '-' 
+      ? displayClassName 
+      : section 
+        ? `- ${section}` 
+        : '-';
 
   const detailRows = [
     ['Sr. No.:', String(student.serialNo), 'Enrollment No.:', student.enrollmentNumber || '-'],
-    ['Name:', student.name, 'Class:', `${className || '-'} - ${section || '-'}`],
+    ['Name:', student.name, 'Class:', displayClassSection],
     ['Gender:', student.gender || '-', 'Attendance:', attendanceStr],
     ['Grade:', displayGrade, 'Class Position:', `${student.classPosition} / ${totalStudents}`],
     ['Term:', term, '% Marks:', displayPercentage],
@@ -169,7 +180,7 @@ export async function exportStudentPDF({
     return mark.toString();
   };
 
-  // Check if a subject is NA (case-insensitive check)
+  // Check if a subject is NA (case-insensitive check) - handles French & Sanskrit
   const isSubjectNA = (subject: string): boolean => {
     const normalizedSubject = subject.toLowerCase();
     // Direct match
@@ -179,6 +190,16 @@ export async function exportStudentPDF({
     // Check if subjectMarksDetail has isNA flag
     const detail = student.subjectMarksDetail?.[subject];
     if (detail && 'isNA' in detail && (detail as any).isNA) return true;
+    // Check by known NA subject abbreviations (French, Sanskrit)
+    const isOptionalSubject = normalizedSubject.includes('french') || normalizedSubject.includes('sanskrit') ||
+                              normalizedSubject === 'fr' || normalizedSubject === 'sans';
+    if (isOptionalSubject && (!detail || detail.total === 0 || detail.total === null)) {
+      // Check if marks are blank/zero for optional subjects
+      const simpleMark = student.subjectMarks?.[subject];
+      if (simpleMark === null || simpleMark === undefined || simpleMark === 0) {
+        return true;
+      }
+    }
     return false;
   };
 
@@ -536,10 +557,31 @@ export async function exportStudentPDF({
 
 /**
  * Generate a safe fallback review if AI generation fails
+ * IMPORTANT: Only reflects applicable subjects - excludes NA subjects (French, Sanskrit)
  */
 function generateFallbackReview(student: Student, selectedSubjects: string[]): string {
   const name = student.name.split(' ')[0];
   const percentage = student.percentage || 0;
+  
+  // Filter out NA subjects for the review
+  const naSubjects = new Set(student.naSubjects || []);
+  const applicableSubjects = selectedSubjects.filter(subject => {
+    const normalizedSubject = subject.toLowerCase();
+    if (naSubjects.has(subject)) return false;
+    if (Array.from(naSubjects).some(na => na.toLowerCase() === normalizedSubject)) return false;
+    // Exclude French and Sanskrit if they have no marks
+    const isOptional = normalizedSubject.includes('french') || normalizedSubject.includes('sanskrit') ||
+                       normalizedSubject === 'fr' || normalizedSubject === 'sans';
+    if (isOptional) {
+      const detail = student.subjectMarksDetail?.[subject];
+      const simpleMark = student.subjectMarks?.[subject];
+      if ((!detail || detail.total === 0 || detail.total === null) && 
+          (simpleMark === null || simpleMark === undefined || simpleMark === 0)) {
+        return false;
+      }
+    }
+    return true;
+  });
   
   let performance = 'satisfactory';
   if (percentage >= 85) performance = 'excellent';
@@ -548,7 +590,9 @@ function generateFallbackReview(student: Student, selectedSubjects: string[]): s
   else if (percentage >= 45) performance = 'satisfactory';
   else performance = 'needs improvement';
   
-  return `${name} has shown ${performance} performance this term with an overall score of ${percentage}%. ` +
+  const subjectCount = applicableSubjects.length;
+  
+  return `${name} has shown ${performance} performance this term with an overall score of ${percentage}% across ${subjectCount} subjects. ` +
     `The student demonstrates commitment to learning and participates actively in class activities. ` +
     `With continued effort and regular practice, there is potential for further improvement. ` +
     `Parents are encouraged to support the student's learning journey at home. ` +
