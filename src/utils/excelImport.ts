@@ -141,9 +141,9 @@ const GENDER_PATTERNS = [
   'gender', 'sex', 'm/f'
 ];
 
-// Class/Grade patterns - for importing class value from sheet
+// Class patterns - for importing class value from sheet (NOT grade/grade points)
 const CLASS_PATTERNS = [
-  'class', 'grade', 'std', 'standard', 'year', 'form'
+  'class', 'std', 'standard', 'year', 'form', 'section class'
 ];
 
 const ATTENDANCE_COMBINED_PATTERNS = [
