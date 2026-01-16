@@ -1,20 +1,22 @@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { GraduationCap, Languages } from 'lucide-react';
+import { BookOpen, Languages } from 'lucide-react';
 
 interface HeaderSectionProps {
   schoolName: string;
   className: string;
+  section: string;
   totalStrength: number;
   language: 'english' | 'hindi';
-  onUpdateSchoolInfo: (field: 'schoolName' | 'className' | 'totalStrength', value: string | number) => void;
+  onUpdateSchoolInfo: (field: 'schoolName' | 'className' | 'section' | 'totalStrength', value: string | number) => void;
   onToggleLanguage: () => void;
 }
 
 export function HeaderSection({
   schoolName,
   className,
+  section,
   totalStrength,
   language,
   onUpdateSchoolInfo,
@@ -24,16 +26,16 @@ export function HeaderSection({
     <div className="card-elevated mb-6">
       <div className="flex items-center gap-3 mb-6">
         <div className="p-3 rounded-xl bg-primary/10">
-          <GraduationCap className="h-8 w-8 text-primary" />
+          <BookOpen className="h-8 w-8 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">Student Assessment Tool</h1>
-          <p className="text-muted-foreground">Generate AI-powered remarks for student evaluations</p>
+          <h1 className="text-2xl font-heading font-bold text-foreground">English Assessment Tool</h1>
+          <p className="text-muted-foreground">Comprehensive English language skill assessment & reporting</p>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="space-y-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="space-y-2 lg:col-span-1">
           <Label htmlFor="schoolName" className="text-sm font-medium">School Name</Label>
           <Input
             id="schoolName"
@@ -51,7 +53,18 @@ export function HeaderSection({
             value={className}
             onChange={(e) => onUpdateSchoolInfo('className', e.target.value)}
             className="input-field"
-            placeholder="e.g., Grade 5-A"
+            placeholder="e.g., Grade 5"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="section" className="text-sm font-medium">Section (Optional)</Label>
+          <Input
+            id="section"
+            value={section}
+            onChange={(e) => onUpdateSchoolInfo('section', e.target.value)}
+            className="input-field"
+            placeholder="e.g., A, B, C"
           />
         </div>
 
@@ -84,6 +97,15 @@ export function HeaderSection({
             </span>
           </div>
         </div>
+      </div>
+
+      {/* English Skills Info */}
+      <div className="mt-4 p-3 rounded-lg bg-primary/5 border border-primary/20">
+        <p className="text-sm text-muted-foreground">
+          <span className="font-medium text-foreground">Assessment Skills:</span>{' '}
+          Speaking & Listening • Writing • Vocabulary • Grammar • Reading Comprehension
+          <span className="ml-2 text-xs">(Good = 2, Average = 1, Needs Improvement = 0)</span>
+        </p>
       </div>
     </div>
   );
