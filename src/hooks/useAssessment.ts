@@ -7,6 +7,7 @@ import {
   calculateTotal, 
   createEmptyStudent, 
   getDefaultAssessmentData,
+  ENGLISH_SKILLS,
   SKILL_VALUES 
 } from '@/types/assessment';
 
@@ -19,15 +20,9 @@ export function useAssessment() {
       try {
         const parsed = JSON.parse(saved);
         
-        // Ensure selectedSubjects exists for backward compatibility
-        if (!parsed.selectedSubjects) {
-          parsed.selectedSubjects = [
-            'Speaking & Listening Skills',
-            'Writing Skills',
-            'Vocabulary',
-            'Grammar Usage',
-            'Reading Comprehension',
-          ];
+        // Ensure section exists for backward compatibility
+        if (!parsed.section) {
+          parsed.section = '';
         }
         
         // Migrate old student format to new format with subjectRatings
@@ -35,10 +30,17 @@ export function useAssessment() {
           parsed.students = parsed.students.map((student: any, index: number) => {
             // If student already has subjectRatings, keep it (preserve undefined values)
             if (student.subjectRatings) {
+              // Only keep English skills
+              const filteredRatings: Record<string, SkillRatingOrUnselected> = {};
+              ENGLISH_SKILLS.forEach(skill => {
+                filteredRatings[skill] = student.subjectRatings[skill];
+              });
+              
               return {
                 ...student,
                 rollNumber: student.rollNumber || '',
-                total: calculateTotal(student.subjectRatings),
+                subjectRatings: filteredRatings,
+                total: calculateTotal(filteredRatings),
               };
             }
             
@@ -52,10 +54,10 @@ export function useAssessment() {
             if (student.grammar) subjectRatings['Grammar Usage'] = student.grammar;
             if (student.reading) subjectRatings['Reading Comprehension'] = student.reading;
             
-            // Fill in defaults for any missing subjects (keep as undefined for unselected)
-            parsed.selectedSubjects.forEach((subject: string) => {
-              if (subjectRatings[subject] === undefined) {
-                subjectRatings[subject] = 'Good'; // Default for migrated data
+            // Fill in defaults for any missing skills
+            ENGLISH_SKILLS.forEach(skill => {
+              if (subjectRatings[skill] === undefined) {
+                subjectRatings[skill] = 'Good';
               }
             });
             
@@ -85,7 +87,7 @@ export function useAssessment() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [data]);
 
-  const updateSchoolInfo = useCallback((field: 'schoolName' | 'className' | 'totalStrength', value: string | number) => {
+  const updateSchoolInfo = useCallback((field: 'schoolName' | 'className' | 'section' | 'totalStrength', value: string | number) => {
     setData(prev => ({ ...prev, [field]: value }));
   }, []);
 
@@ -96,36 +98,10 @@ export function useAssessment() {
     }));
   }, []);
 
-  const updateSelectedSubjects = useCallback((subjects: string[]) => {
-    setData(prev => {
-      // Update all existing students to have ratings for new subjects
-      const updatedStudents = prev.students.map(student => {
-        const newRatings: Record<string, SkillRatingOrUnselected> = {};
-        subjects.forEach(subject => {
-          // Preserve existing rating or default to Good for new subjects
-          newRatings[subject] = student.subjectRatings[subject] !== undefined 
-            ? student.subjectRatings[subject] 
-            : 'Good';
-        });
-        return {
-          ...student,
-          subjectRatings: newRatings,
-          total: calculateTotal(newRatings),
-        };
-      });
-      
-      return {
-        ...prev,
-        selectedSubjects: subjects,
-        students: updatedStudents,
-      };
-    });
-  }, []);
-
   const addStudent = useCallback(() => {
     setData(prev => ({
       ...prev,
-      students: [...prev.students, createEmptyStudent(prev.students.length + 1, prev.selectedSubjects)],
+      students: [...prev.students, createEmptyStudent(prev.students.length + 1)],
     }));
   }, []);
 
@@ -200,7 +176,7 @@ export function useAssessment() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `assessment-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `english-assessment-backup-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }, [data]);
@@ -210,15 +186,9 @@ export function useAssessment() {
     reader.onload = (e) => {
       try {
         const imported = JSON.parse(e.target?.result as string);
-        // Ensure selectedSubjects exists
-        if (!imported.selectedSubjects) {
-          imported.selectedSubjects = [
-            'Speaking & Listening Skills',
-            'Writing Skills',
-            'Vocabulary',
-            'Grammar Usage',
-            'Reading Comprehension',
-          ];
+        // Ensure section exists
+        if (!imported.section) {
+          imported.section = '';
         }
         setData(imported);
       } catch (error) {
@@ -232,7 +202,6 @@ export function useAssessment() {
     data,
     updateSchoolInfo,
     toggleLanguage,
-    updateSelectedSubjects,
     addStudent,
     removeStudent,
     updateStudent,
