@@ -16,6 +16,7 @@ interface ActionButtonsProps {
   onAddStudent: () => void;
   onExportExcel: () => void;
   onExportPDF: () => void;
+  onExportClassPerformance: () => void;
   onExportJSON: () => void;
   onImportJSON: (file: File) => void;
   onImportExcel: (file: File) => void;
@@ -29,6 +30,7 @@ export function ActionButtons({
   onAddStudent,
   onExportExcel,
   onExportPDF,
+  onExportClassPerformance,
   onExportJSON,
   onImportJSON,
   onImportExcel,
@@ -112,6 +114,15 @@ export function ActionButtons({
       >
         <FileText className="h-4 w-4" />
         Export PDF
+      </Button>
+
+      <Button 
+        onClick={onExportClassPerformance} 
+        variant="outline" 
+        className="gap-2 border-secondary text-secondary-foreground hover:bg-secondary"
+      >
+        <FileSpreadsheet className="h-4 w-4" />
+        Class Analysis
       </Button>
 
       <Button onClick={onExportJSON} variant="outline" className="gap-2">
