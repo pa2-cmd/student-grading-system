@@ -1,52 +1,50 @@
-import { Student, SkillRating, getMaxPossibleScore } from '@/types/assessment';
+import { Student, SkillRating, getMaxPossibleScore, ENGLISH_SKILLS } from '@/types/assessment';
 import { SkillSelect } from './SkillSelect';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Trash2, Sparkles, Loader2, Pencil, Check, X } from 'lucide-react';
+import { Trash2, Sparkles, Loader2, Pencil, Check, X, FileText } from 'lucide-react';
 import { useState } from 'react';
 
 interface StudentRowProps {
   student: Student;
-  selectedSubjects: string[];
-  onUpdateSubjectRating: (subject: string, value: SkillRating) => void;
-  onUpdate: (field: keyof Student, value: any) => void;
-  onRemove: () => void;
-  onGenerateRemark: () => void;
-  canRemove: boolean;
+  onUpdateStudent: (id: string, field: keyof Student, value: any) => void;
+  onUpdateSubjectRating: (studentId: string, subject: string, rating: SkillRating) => void;
+  onRemoveStudent: (id: string) => void;
+  onGenerateRemark: (id: string) => void;
+  onExportStudentPDF?: (student: Student) => void;
 }
 
 export function StudentRow({ 
   student, 
-  selectedSubjects,
+  onUpdateStudent,
   onUpdateSubjectRating,
-  onUpdate, 
-  onRemove, 
+  onRemoveStudent, 
   onGenerateRemark, 
-  canRemove 
+  onExportStudentPDF,
 }: StudentRowProps) {
   const [isEditingRemark, setIsEditingRemark] = useState(false);
   const [editedRemark, setEditedRemark] = useState(student.remark);
 
   // Calculate max score based on fields that have actual values (not unselected)
   const maxPossibleScore = getMaxPossibleScore(student.subjectRatings);
-  const totalSelectedSubjects = selectedSubjects.length;
-  const ratedSubjectsCount = Object.values(student.subjectRatings).filter(r => r !== undefined).length;
+  const totalSkills = ENGLISH_SKILLS.length;
+  const ratedSkillsCount = Object.values(student.subjectRatings).filter(r => r !== undefined).length;
   
-  // Show different display based on whether all subjects are rated
-  const hasUnratedSubjects = ratedSubjectsCount < totalSelectedSubjects;
+  // Show different display based on whether all skills are rated
+  const hasUnratedSkills = ratedSkillsCount < totalSkills;
   
   const percentage = maxPossibleScore > 0 ? (student.total / maxPossibleScore) * 100 : 0;
   
   const getTotalClass = () => {
-    if (hasUnratedSubjects) return 'text-muted-foreground'; // Incomplete
+    if (hasUnratedSkills) return 'text-muted-foreground'; // Incomplete
     if (percentage >= 80) return 'text-skill-good font-bold';
     if (percentage >= 50) return 'text-skill-average font-bold';
     return 'text-skill-needs font-bold';
   };
 
   const handleSaveRemark = () => {
-    onUpdate('remark', editedRemark);
+    onUpdateStudent(student.id, 'remark', editedRemark);
     setIsEditingRemark(false);
   };
 
@@ -60,6 +58,8 @@ export function StudentRow({
     setIsEditingRemark(true);
   };
 
+  const canRemove = true; // Can always remove students
+
   return (
     <tr className="animate-fade-in hover:bg-muted/50 transition-colors">
       {/* Serial Number */}
@@ -69,7 +69,7 @@ export function StudentRow({
       <td>
         <Input
           value={student.rollNumber}
-          onChange={(e) => onUpdate('rollNumber', e.target.value)}
+          onChange={(e) => onUpdateStudent(student.id, 'rollNumber', e.target.value)}
           placeholder="Roll No"
           className="input-field w-full min-w-[80px]"
         />
@@ -79,28 +79,28 @@ export function StudentRow({
       <td>
         <Input
           value={student.name}
-          onChange={(e) => onUpdate('name', e.target.value)}
+          onChange={(e) => onUpdateStudent(student.id, 'name', e.target.value)}
           placeholder="Enter student name"
           className="input-field w-full min-w-[150px]"
         />
       </td>
       
-      {/* Dynamic Subject Columns - Pass undefined for unselected state */}
-      {selectedSubjects.map(subject => (
-        <td key={subject}>
+      {/* English Skills Columns */}
+      {ENGLISH_SKILLS.map(skill => (
+        <td key={skill}>
           <SkillSelect
-            value={student.subjectRatings?.[subject]}
-            onChange={(value: SkillRating) => onUpdateSubjectRating(subject, value)}
+            value={student.subjectRatings?.[skill]}
+            onChange={(value: SkillRating) => onUpdateSubjectRating(student.id, skill, value)}
           />
         </td>
       ))}
       
       {/* Total Score - Shows rated count if incomplete */}
       <td className={`text-center text-lg ${getTotalClass()}`}>
-        {hasUnratedSubjects ? (
-          <span title={`${ratedSubjectsCount}/${totalSelectedSubjects} subjects rated`}>
+        {hasUnratedSkills ? (
+          <span title={`${ratedSkillsCount}/${totalSkills} skills rated`}>
             {student.total}/{maxPossibleScore}
-            <span className="text-xs block text-muted-foreground">({ratedSubjectsCount}/{totalSelectedSubjects})</span>
+            <span className="text-xs block text-muted-foreground">({ratedSkillsCount}/{totalSkills})</span>
           </span>
         ) : (
           `${student.total}/${maxPossibleScore}`
@@ -150,7 +150,7 @@ export function StudentRow({
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={onGenerateRemark}
+                  onClick={() => onGenerateRemark(student.id)}
                   disabled={student.isGeneratingRemark || !student.name}
                   title="Generate AI Remark"
                   className="h-8 w-8 p-0"
@@ -172,6 +172,17 @@ export function StudentRow({
                     <Pencil className="h-4 w-4" />
                   </Button>
                 )}
+                {onExportStudentPDF && student.name && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onExportStudentPDF(student)}
+                    title="Export Student PDF"
+                    className="h-8 w-8 p-0"
+                  >
+                    <FileText className="h-4 w-4" />
+                  </Button>
+                )}
               </>
             )}
           </div>
@@ -183,7 +194,7 @@ export function StudentRow({
         <Button
           size="sm"
           variant="ghost"
-          onClick={onRemove}
+          onClick={() => onRemoveStudent(student.id)}
           disabled={!canRemove}
           className="text-destructive hover:text-destructive hover:bg-destructive/10"
         >
