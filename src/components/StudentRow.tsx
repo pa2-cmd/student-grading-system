@@ -62,14 +62,6 @@ export function StudentRow({
       <td className="text-center font-medium">{student.serialNo}</td>
       <td>
         <Input
-          value={student.rollNumber}
-          onChange={(e) => onUpdateStudent(student.id, 'rollNumber', e.target.value)}
-          placeholder="Roll No"
-          className="input-field w-full min-w-[80px]"
-        />
-      </td>
-      <td>
-        <Input
           value={student.name}
           onChange={(e) => onUpdateStudent(student.id, 'name', e.target.value)}
           placeholder="Enter student name"

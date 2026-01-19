@@ -38,10 +38,9 @@ export function exportToExcel(data: AssessmentData) {
   metadataRows.push(['Date:', new Date().toLocaleDateString()]);
   metadataRows.push([]); // Empty row before table
   
-  // Header row - dynamic based on subject skills
+  // Header row - dynamic based on subject skills (NO Roll Number)
   const headerRow = [
     'S.No', 
-    'Roll No', 
     'Student Name', 
     ...skills, 
     'Total', 
@@ -55,7 +54,6 @@ export function exportToExcel(data: AssessmentData) {
       
       return [
         student.serialNo,
-        student.rollNumber || '',
         student.name,
         // Map each skill - preserve blanks as empty, preserve 0 values
         ...skills.map(skill => {
@@ -73,10 +71,9 @@ export function exportToExcel(data: AssessmentData) {
   const allRows = [...metadataRows, headerRow, ...studentRows];
   const ws = XLSX.utils.aoa_to_sheet(allRows);
 
-  // Set column widths dynamically
+  // Set column widths dynamically (NO Roll Number column)
   const colWidths = [
     { wch: 6 },   // S.No
-    { wch: 10 },  // Roll No
     { wch: 25 },  // Student Name
     ...skills.map(() => ({ wch: 18 })),  // Skill columns
     { wch: 10 },  // Total

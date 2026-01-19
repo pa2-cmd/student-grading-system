@@ -116,7 +116,6 @@ export interface Student {
   id: string;
   serialNo: number;
   name: string;
-  rollNumber: string;
   // Skill ratings - key is skill name, value is rating (undefined = unselected)
   subjectRatings: Record<string, SkillRatingOrUnselected>;
   total: number;
@@ -180,7 +179,6 @@ export function createEmptyStudent(serialNo: number, subject: SubjectType): Stud
     id: crypto.randomUUID(),
     serialNo,
     name: '',
-    rollNumber: '',
     subjectRatings,
     total: skills.length * 2, // All "Good" = 2 points each
     remark: '',

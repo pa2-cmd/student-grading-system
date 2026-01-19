@@ -43,10 +43,9 @@ export function exportToPDF(data: AssessmentData): void {
   ].filter(Boolean).join(' | ');
   doc.text(subHeader, pageWidth / 2, 22, { align: 'center' });
   
-  // Prepare table data with subject skills
+  // Prepare table data with subject skills (NO Roll Number)
   const headers = [
     'S.No',
-    'Roll No',
     'Student Name',
     ...skills.map(s => getSkillDisplayName(s)),
     'Total',
@@ -60,7 +59,6 @@ export function exportToPDF(data: AssessmentData): void {
       
       return [
         student.serialNo,
-        student.rollNumber || '-',
         student.name,
         ...skills.map(skill => {
           const rating = student.subjectRatings[skill];
@@ -72,8 +70,8 @@ export function exportToPDF(data: AssessmentData): void {
       ];
     });
   
-  // Calculate dynamic column widths based on number of skills
-  const fixedWidth = 12 + 18 + 32 + 15 + 65; // S.No + Roll + Name + Total + Remarks
+  // Calculate dynamic column widths based on number of skills (NO Roll Number)
+  const fixedWidth = 12 + 32 + 15 + 65; // S.No + Name + Total + Remarks
   const availableWidth = pageWidth - 2 * margin - fixedWidth;
   const skillColWidth = Math.max(15, availableWidth / skills.length);
   
@@ -98,8 +96,7 @@ export function exportToPDF(data: AssessmentData): void {
     },
     columnStyles: {
       0: { halign: 'center', cellWidth: 10 },  // S.No
-      1: { halign: 'center', cellWidth: 15 },  // Roll No
-      2: { cellWidth: 28 },                     // Name
+      1: { cellWidth: 32 },                     // Name
       [headers.length - 2]: { halign: 'center', cellWidth: 12 }, // Total
       [headers.length - 1]: { cellWidth: 55 }, // Remarks
     },
@@ -161,17 +158,16 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
   doc.text(`${data.subject} Assessment Report`, pageWidth / 2, yPos + 4, { align: 'center' });
   yPos += 15;
   
-  // Student Info Box
+  // Student Info Box (NO Roll Number)
   doc.setDrawColor(200);
   doc.setFillColor(248, 250, 252);
-  doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 20, 3, 3, 'FD');
+  doc.roundedRect(margin, yPos, pageWidth - 2 * margin, 15, 3, 3, 'FD');
   
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
-  doc.text(`Student: ${student.name}`, margin + 5, yPos + 8);
-  doc.text(`Roll No: ${student.rollNumber || '-'}`, margin + 5, yPos + 15);
-  doc.text(`S.No: ${student.serialNo}`, pageWidth - margin - 30, yPos + 8);
-  yPos += 28;
+  doc.text(`Student: ${student.name}`, margin + 5, yPos + 10);
+  doc.text(`S.No: ${student.serialNo}`, pageWidth - margin - 30, yPos + 10);
+  yPos += 23;
   
   // Skills Assessment Table
   doc.setFontSize(12);

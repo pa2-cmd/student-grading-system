@@ -28,7 +28,6 @@ const StudentSchema = z.object({
   id: z.string().min(1).max(100),
   serialNo: z.number().int().min(0).max(100000),
   name: z.string().max(200).transform(s => s.trim()),
-  rollNumber: z.string().max(50).transform(s => s.trim()),
   subjectRatings: z.record(z.string().max(100), SkillRatingSchema),
   total: z.number().int().min(0).max(1000),
   remark: z.string().max(5000).transform(s => s.trim()),
@@ -74,9 +73,10 @@ export function useAssessment() {
                 filteredRatings[skill] = student.subjectRatings[skill];
               });
               
+              // Migrate: strip rollNumber if it exists in old data
+              const { rollNumber: _unused, ...rest } = student;
               return {
-                ...student,
-                rollNumber: student.rollNumber || '',
+                ...rest,
                 subjectRatings: filteredRatings,
                 total: calculateTotal(filteredRatings),
               };
@@ -92,7 +92,6 @@ export function useAssessment() {
               id: student.id || crypto.randomUUID(),
               serialNo: student.serialNo || index + 1,
               name: student.name || '',
-              rollNumber: student.rollNumber || '',
               subjectRatings,
               total: calculateTotal(subjectRatings),
               remark: student.remark || '',
@@ -266,12 +265,11 @@ export function useAssessment() {
         // Validated data is safe to use
         const validated = validationResult.data;
         
-        // Recalculate totals to ensure integrity and cast to proper types
+        // Recalculate totals to ensure integrity and cast to proper types (NO rollNumber)
         const processedStudents: Student[] = validated.students.map(student => ({
           id: student.id,
           serialNo: student.serialNo,
           name: student.name,
-          rollNumber: student.rollNumber,
           subjectRatings: student.subjectRatings as Record<string, SkillRatingOrUnselected>,
           total: calculateTotal(student.subjectRatings as Record<string, SkillRatingOrUnselected>),
           remark: student.remark,
