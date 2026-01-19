@@ -36,7 +36,6 @@ export function AssessmentTable({
           <TableHeader>
             <TableRow className="bg-muted/50">
               <TableHead className="w-16 text-center font-semibold">S.No</TableHead>
-              <TableHead className="min-w-[100px] font-semibold">Roll No</TableHead>
               <TableHead className="min-w-[180px] font-semibold">Student Name</TableHead>
               {skills.map(skill => (
                 <TableHead key={skill} className="min-w-[120px] font-semibold text-xs">

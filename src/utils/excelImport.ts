@@ -590,9 +590,8 @@ export async function importStudentsFromExcel(file: File, targetSubject?: Subjec
             return cell ? cell.v : undefined;
           };
           
-          // Extract student data with sanitization
+          // Extract student data with sanitization (NO Roll Number)
           const serialNoRaw = getCellValue(columnMap['S.No']);
-          const rollNoRaw = getCellValue(columnMap['Roll No']);
           const nameRaw = getCellValue(columnMap['Student Name']);
           const remarkRaw = getCellValue(columnMap['Remarks']);
           
@@ -611,9 +610,6 @@ export async function importStudentsFromExcel(file: File, targetSubject?: Subjec
           } else {
             serialNo = students.length + 1;
           }
-          
-          // SECURITY: Sanitize roll number
-          const rollNumber = sanitizeString(rollNoRaw, 50);
           
           // Parse skill ratings - only known skills for the subject
           const subjectRatings: Record<string, SkillRatingOrUnselected> = {};
@@ -641,12 +637,11 @@ export async function importStudentsFromExcel(file: File, targetSubject?: Subjec
           // SECURITY: Sanitize remarks
           const remark = sanitizeRemark(remarkRaw);
           
-          // SECURITY: Only include known fields - strip unknown fields
+          // SECURITY: Only include known fields - strip unknown fields (NO rollNumber)
           students.push({
             id: crypto.randomUUID(),
             serialNo,
             name,
-            rollNumber,
             subjectRatings,
             total,
             remark,
