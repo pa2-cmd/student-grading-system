@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { z } from 'zod';
+import { toast } from 'sonner';
 import { 
   AssessmentData, 
   Student, 
@@ -9,10 +11,39 @@ import {
   getDefaultAssessmentData,
   getSkillsForSubject,
   SubjectType,
-  SKILL_VALUES 
+  SKILL_VALUES,
+  SUBJECTS
 } from '@/types/assessment';
 
 const STORAGE_KEY = 'assessment-data-v2';
+
+// ============================================================
+// ZOD SCHEMA VALIDATION FOR JSON IMPORT
+// Prevents malformed/malicious JSON from corrupting state
+// ============================================================
+
+const SkillRatingSchema = z.enum(['Good', 'Average', 'Needs Improvement']).optional();
+
+const StudentSchema = z.object({
+  id: z.string().min(1).max(100),
+  serialNo: z.number().int().min(0).max(100000),
+  name: z.string().max(200).transform(s => s.trim()),
+  rollNumber: z.string().max(50).transform(s => s.trim()),
+  subjectRatings: z.record(z.string().max(100), SkillRatingSchema),
+  total: z.number().int().min(0).max(1000),
+  remark: z.string().max(5000).transform(s => s.trim()),
+  isGeneratingRemark: z.boolean(),
+}).required();
+
+const AssessmentDataSchema = z.object({
+  schoolName: z.string().max(300).transform(s => s.trim()),
+  className: z.string().max(100).transform(s => s.trim()),
+  section: z.string().max(50).transform(s => s.trim()),
+  totalStrength: z.number().int().min(0).max(100000),
+  subject: z.enum(['English', 'Maths', 'Science', 'Social Science'] as const),
+  students: z.array(StudentSchema).max(10000),
+  language: z.enum(['english', 'hindi']),
+});
 
 export function useAssessment() {
   const [data, setData] = useState<AssessmentData>(() => {
@@ -189,23 +220,87 @@ export function useAssessment() {
   }, [data]);
 
   const importJSON = useCallback((file: File) => {
+    // Validate file size (max 10MB to prevent DoS)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error('File too large. Maximum size is 10MB.');
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const imported = JSON.parse(e.target?.result as string);
-        // Ensure section exists
-        if (!imported.section) {
-          imported.section = '';
+        const rawContent = e.target?.result as string;
+        
+        // Parse JSON safely
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(rawContent);
+        } catch {
+          toast.error('Invalid JSON file format.');
+          return;
         }
-        // Ensure subject exists
-        if (!imported.subject) {
-          imported.subject = 'English';
+
+        // Apply defaults for missing optional fields before validation
+        if (typeof parsed === 'object' && parsed !== null) {
+          const obj = parsed as Record<string, unknown>;
+          if (!obj.section) obj.section = '';
+          if (!obj.subject) obj.subject = 'English';
+          if (!obj.language) obj.language = 'english';
+          if (typeof obj.totalStrength !== 'number') obj.totalStrength = 0;
         }
-        setData(imported);
+
+        // Validate against schema
+        const validationResult = AssessmentDataSchema.safeParse(parsed);
+        
+        if (!validationResult.success) {
+          const errorMessages = validationResult.error.errors
+            .slice(0, 3)
+            .map(e => `${e.path.join('.')}: ${e.message}`)
+            .join('; ');
+          toast.error(`Invalid backup file: ${errorMessages}`);
+          console.error('JSON validation errors:', validationResult.error.errors);
+          return;
+        }
+
+        // Validated data is safe to use
+        const validated = validationResult.data;
+        
+        // Recalculate totals to ensure integrity and cast to proper types
+        const processedStudents: Student[] = validated.students.map(student => ({
+          id: student.id,
+          serialNo: student.serialNo,
+          name: student.name,
+          rollNumber: student.rollNumber,
+          subjectRatings: student.subjectRatings as Record<string, SkillRatingOrUnselected>,
+          total: calculateTotal(student.subjectRatings as Record<string, SkillRatingOrUnselected>),
+          remark: student.remark,
+          isGeneratingRemark: student.isGeneratingRemark,
+        }));
+
+        const processedData: AssessmentData = {
+          schoolName: validated.schoolName,
+          className: validated.className,
+          section: validated.section,
+          totalStrength: validated.totalStrength,
+          subject: validated.subject,
+          language: validated.language,
+          students: processedStudents,
+        };
+
+        setData(processedData);
+        
+        toast.success('Backup imported successfully!');
       } catch (error) {
         console.error('Failed to import JSON:', error);
+        toast.error('Failed to import backup file.');
       }
     };
+    
+    reader.onerror = () => {
+      toast.error('Failed to read file.');
+    };
+    
     reader.readAsText(file);
   }, []);
 
