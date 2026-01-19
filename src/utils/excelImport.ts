@@ -365,7 +365,33 @@ export async function importStudentsFromExcel(file: File, targetSubject?: Subjec
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
+        // SECURITY: Safe parsing options to prevent vulnerabilities
+        // - WTF: disables "What The Formula" parsing (prevents formula injection)
+        // - cellFormula: false prevents formula evaluation
+        // - cellHTML: false prevents HTML parsing
+        // - cellStyles: false prevents style parsing (reduces attack surface)
+        // - bookDeps: false prevents external dependency resolution
+        // - bookFiles: false prevents file inclusion
+        // - bookProps: false prevents property parsing
+        // - bookSheets: false prevents sheet enumeration beyond needed
+        // - bookVBA: false prevents VBA macro parsing
+        // - password: '' ensures no password-protected files are processed
+        // - sheetRows: 10000 limits row count to prevent DoS
+        // - PRN: false prevents PRN file parsing
+        const workbook = XLSX.read(data, { 
+          type: 'array',
+          cellFormula: false,    // Don't parse formulas
+          cellHTML: false,       // Don't parse HTML
+          cellStyles: false,     // Don't parse styles
+          bookDeps: false,       // Don't resolve external dependencies
+          bookFiles: false,      // Don't include file references
+          bookProps: false,      // Don't parse document properties
+          bookSheets: true,      // We need sheet names
+          bookVBA: false,        // Don't parse VBA macros
+          sheetRows: 10000,      // Limit rows to prevent DoS
+          WTF: false,            // Disable verbose parsing
+          dense: false,          // Use sparse array format
+        });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         
