@@ -7,11 +7,12 @@ import {
   calculateTotal, 
   createEmptyStudent, 
   getDefaultAssessmentData,
-  ENGLISH_SKILLS,
+  getSkillsForSubject,
+  SubjectType,
   SKILL_VALUES 
 } from '@/types/assessment';
 
-const STORAGE_KEY = 'assessment-data';
+const STORAGE_KEY = 'assessment-data-v2';
 
 export function useAssessment() {
   const [data, setData] = useState<AssessmentData>(() => {
@@ -25,14 +26,20 @@ export function useAssessment() {
           parsed.section = '';
         }
         
-        // Migrate old student format to new format with subjectRatings
+        // Ensure subject exists
+        if (!parsed.subject) {
+          parsed.subject = 'English';
+        }
+        
+        // Migrate old student format if needed
         if (parsed.students && parsed.students.length > 0) {
+          const skills = getSkillsForSubject(parsed.subject);
           parsed.students = parsed.students.map((student: any, index: number) => {
             // If student already has subjectRatings, keep it (preserve undefined values)
             if (student.subjectRatings) {
-              // Only keep English skills
+              // Filter to keep only relevant skills for current subject
               const filteredRatings: Record<string, SkillRatingOrUnselected> = {};
-              ENGLISH_SKILLS.forEach(skill => {
+              skills.forEach(skill => {
                 filteredRatings[skill] = student.subjectRatings[skill];
               });
               
@@ -44,21 +51,10 @@ export function useAssessment() {
               };
             }
             
-            // Migrate from old format (individual skill properties)
+            // Create default ratings
             const subjectRatings: Record<string, SkillRatingOrUnselected> = {};
-            
-            // Map old properties to new subjectRatings
-            if (student.speakingListening) subjectRatings['Speaking & Listening Skills'] = student.speakingListening;
-            if (student.writing) subjectRatings['Writing Skills'] = student.writing;
-            if (student.vocabulary) subjectRatings['Vocabulary'] = student.vocabulary;
-            if (student.grammar) subjectRatings['Grammar Usage'] = student.grammar;
-            if (student.reading) subjectRatings['Reading Comprehension'] = student.reading;
-            
-            // Fill in defaults for any missing skills
-            ENGLISH_SKILLS.forEach(skill => {
-              if (subjectRatings[skill] === undefined) {
-                subjectRatings[skill] = 'Good';
-              }
+            skills.forEach(skill => {
+              subjectRatings[skill] = 'Good';
             });
             
             return {
@@ -91,6 +87,17 @@ export function useAssessment() {
     setData(prev => ({ ...prev, [field]: value }));
   }, []);
 
+  const setSubject = useCallback((subject: SubjectType) => {
+    setData(prev => {
+      // Reset students when changing subjects
+      return {
+        ...prev,
+        subject,
+        students: [],
+      };
+    });
+  }, []);
+
   const toggleLanguage = useCallback(() => {
     setData(prev => ({
       ...prev,
@@ -101,7 +108,7 @@ export function useAssessment() {
   const addStudent = useCallback(() => {
     setData(prev => ({
       ...prev,
-      students: [...prev.students, createEmptyStudent(prev.students.length + 1)],
+      students: [...prev.students, createEmptyStudent(prev.students.length + 1, prev.subject)],
     }));
   }, []);
 
@@ -176,7 +183,7 @@ export function useAssessment() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `english-assessment-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `${data.subject.toLowerCase()}-assessment-backup-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }, [data]);
@@ -190,6 +197,10 @@ export function useAssessment() {
         if (!imported.section) {
           imported.section = '';
         }
+        // Ensure subject exists
+        if (!imported.subject) {
+          imported.subject = 'English';
+        }
         setData(imported);
       } catch (error) {
         console.error('Failed to import JSON:', error);
@@ -201,6 +212,7 @@ export function useAssessment() {
   return {
     data,
     updateSchoolInfo,
+    setSubject,
     toggleLanguage,
     addStudent,
     removeStudent,

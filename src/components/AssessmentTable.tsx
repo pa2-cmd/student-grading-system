@@ -1,4 +1,4 @@
-import { Student, SkillRating, ENGLISH_SKILLS } from '@/types/assessment';
+import { Student, SkillRating, SubjectType, getSkillsForSubject, getSkillDisplayName } from '@/types/assessment';
 import { StudentRow } from './StudentRow';
 import {
   Table,
@@ -10,6 +10,7 @@ import {
 
 interface AssessmentTableProps {
   students: Student[];
+  subject: SubjectType;
   onUpdateStudent: (id: string, field: keyof Student, value: any) => void;
   onUpdateSubjectRating: (studentId: string, subject: string, rating: SkillRating) => void;
   onRemoveStudent: (id: string) => void;
@@ -19,12 +20,15 @@ interface AssessmentTableProps {
 
 export function AssessmentTable({
   students,
+  subject,
   onUpdateStudent,
   onUpdateSubjectRating,
   onRemoveStudent,
   onGenerateRemark,
   onExportStudentPDF,
 }: AssessmentTableProps) {
+  const skills = getSkillsForSubject(subject);
+  
   return (
     <div className="card-elevated overflow-hidden">
       <div className="overflow-x-auto">
@@ -34,9 +38,9 @@ export function AssessmentTable({
               <TableHead className="w-16 text-center font-semibold">S.No</TableHead>
               <TableHead className="min-w-[100px] font-semibold">Roll No</TableHead>
               <TableHead className="min-w-[180px] font-semibold">Student Name</TableHead>
-              {ENGLISH_SKILLS.map(skill => (
-                <TableHead key={skill} className="min-w-[140px] font-semibold">
-                  {skill.replace(' Skills', '').replace(' Usage', '')}
+              {skills.map(skill => (
+                <TableHead key={skill} className="min-w-[120px] font-semibold text-xs">
+                  {getSkillDisplayName(skill)}
                 </TableHead>
               ))}
               <TableHead className="w-20 text-center font-semibold">Total</TableHead>
@@ -49,6 +53,7 @@ export function AssessmentTable({
               <StudentRow
                 key={student.id}
                 student={student}
+                subject={subject}
                 onUpdateStudent={onUpdateStudent}
                 onUpdateSubjectRating={onUpdateSubjectRating}
                 onRemoveStudent={onRemoveStudent}

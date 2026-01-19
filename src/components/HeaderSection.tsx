@@ -1,16 +1,20 @@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { BookOpen, Languages } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { BookOpen, Languages, ArrowLeft } from 'lucide-react';
+import { SubjectType, getSkillsForSubject, getSkillDisplayName } from '@/types/assessment';
 
 interface HeaderSectionProps {
   schoolName: string;
   className: string;
   section: string;
   totalStrength: number;
+  subject: SubjectType;
   language: 'english' | 'hindi';
   onUpdateSchoolInfo: (field: 'schoolName' | 'className' | 'section' | 'totalStrength', value: string | number) => void;
   onToggleLanguage: () => void;
+  onChangeSubject: () => void;
 }
 
 export function HeaderSection({
@@ -18,19 +22,29 @@ export function HeaderSection({
   className,
   section,
   totalStrength,
+  subject,
   language,
   onUpdateSchoolInfo,
   onToggleLanguage,
+  onChangeSubject,
 }: HeaderSectionProps) {
+  const skills = getSkillsForSubject(subject);
+  
   return (
     <div className="card-elevated mb-6">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-3 rounded-xl bg-primary/10">
-          <BookOpen className="h-8 w-8 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">English Assessment Tool</h1>
-          <p className="text-muted-foreground">Comprehensive English language skill assessment & reporting</p>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={onChangeSubject} className="gap-2">
+            <ArrowLeft className="h-4 w-4" />
+            Change Subject
+          </Button>
+          <div className="p-3 rounded-xl bg-primary/10">
+            <BookOpen className="h-8 w-8 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-heading font-bold text-foreground">{subject} Assessment Tool</h1>
+            <p className="text-muted-foreground">Comprehensive {subject.toLowerCase()} skill assessment & reporting</p>
+          </div>
         </div>
       </div>
 
@@ -99,11 +113,11 @@ export function HeaderSection({
         </div>
       </div>
 
-      {/* English Skills Info */}
+      {/* Skills Info */}
       <div className="mt-4 p-3 rounded-lg bg-primary/5 border border-primary/20">
         <p className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">Assessment Skills:</span>{' '}
-          Speaking & Listening • Writing • Vocabulary • Grammar • Reading Comprehension
+          <span className="font-medium text-foreground">{subject} Skills:</span>{' '}
+          {skills.map(s => getSkillDisplayName(s)).join(' • ')}
           <span className="ml-2 text-xs">(Good = 2, Average = 1, Needs Improvement = 0)</span>
         </p>
       </div>

@@ -1,10 +1,19 @@
-// English Assessment Tool - ONLY for English subject
+// Multi-Subject Assessment Tool
+// Supports: English, Maths, Science, Social Science
 // Skill ratings - undefined means "unselected" (blank/NA from Excel)
 export type SkillRating = 'Good' | 'Average' | 'Needs Improvement';
 export type SkillRatingOrUnselected = SkillRating | undefined;
 export type SkillValue = 2 | 1 | 0;
 
-// Fixed English assessment skills - NO OTHER SUBJECTS ALLOWED
+// Subject Types
+export type SubjectType = 'English' | 'Maths' | 'Science' | 'Social Science';
+
+export const SUBJECTS: SubjectType[] = ['English', 'Maths', 'Science', 'Social Science'];
+
+// ============================================================
+// SUBJECT SKILL MATRICES
+// ============================================================
+
 export const ENGLISH_SKILLS = [
   'Speaking & Listening Skills',
   'Writing Skills',
@@ -13,7 +22,95 @@ export const ENGLISH_SKILLS = [
   'Reading Comprehension',
 ] as const;
 
+export const MATHS_SKILLS = [
+  'Conceptual Understanding',
+  'Problem Solving Skills',
+  'Calculation Accuracy',
+  'Real Life Application',
+  'Maths Vocabulary',
+  'Data Handling',
+  'Geometry Skills',
+  'Algebra Skills',
+] as const;
+
+export const SCIENCE_SKILLS = [
+  'Concept Clarity',
+  'Science Vocabulary',
+  'Observational Skills',
+  'Inquiry Based Questioning',
+  'Real Life Application',
+  'Reasoning',
+  'Innovative Ideas',
+] as const;
+
+export const SOCIAL_SCIENCE_SKILLS = [
+  'Awareness Of Surrounding',
+  'Concept Clarity',
+  'Social Science Vocabulary',
+  'Ability To Explain',
+  'Inquiry Based Questioning',
+  'Real Life Application',
+  'Reasoning',
+  'Map Skills',
+] as const;
+
+// Type aliases
 export type EnglishSkill = typeof ENGLISH_SKILLS[number];
+export type MathsSkill = typeof MATHS_SKILLS[number];
+export type ScienceSkill = typeof SCIENCE_SKILLS[number];
+export type SocialScienceSkill = typeof SOCIAL_SCIENCE_SKILLS[number];
+
+// Get skills array for a subject
+export function getSkillsForSubject(subject: SubjectType): readonly string[] {
+  switch (subject) {
+    case 'English':
+      return ENGLISH_SKILLS;
+    case 'Maths':
+      return MATHS_SKILLS;
+    case 'Science':
+      return SCIENCE_SKILLS;
+    case 'Social Science':
+      return SOCIAL_SCIENCE_SKILLS;
+    default:
+      return ENGLISH_SKILLS;
+  }
+}
+
+// Get display name for skill headers (shorter versions)
+export function getSkillDisplayName(skill: string): string {
+  const displayNames: Record<string, string> = {
+    // English
+    'Speaking & Listening Skills': 'Speaking & Listening',
+    'Writing Skills': 'Writing',
+    'Grammar Usage': 'Grammar',
+    'Reading Comprehension': 'Reading',
+    // Maths
+    'Conceptual Understanding': 'Conceptual',
+    'Problem Solving Skills': 'Problem Solving',
+    'Calculation Accuracy': 'Calculation',
+    'Real Life Application': 'Real Life App.',
+    'Maths Vocabulary': 'Maths Vocab',
+    'Data Handling': 'Data Handling',
+    'Geometry Skills': 'Geometry',
+    'Algebra Skills': 'Algebra',
+    // Science
+    'Concept Clarity': 'Concepts',
+    'Science Vocabulary': 'Sci. Vocab',
+    'Observational Skills': 'Observation',
+    'Inquiry Based Questioning': 'Inquiry',
+    'Innovative Ideas': 'Innovation',
+    // Social Science
+    'Awareness Of Surrounding': 'Awareness',
+    'Social Science Vocabulary': 'SS Vocab',
+    'Ability To Explain': 'Explanation',
+    'Map Skills': 'Map Skills',
+  };
+  return displayNames[skill] || skill;
+}
+
+// ============================================================
+// STUDENT & ASSESSMENT DATA TYPES
+// ============================================================
 
 export interface Student {
   id: string;
@@ -30,8 +127,9 @@ export interface Student {
 export interface AssessmentData {
   schoolName: string;
   className: string;
-  section: string; // NEW: Section field
+  section: string;
   totalStrength: number;
+  subject: SubjectType;
   students: Student[];
   language: 'english' | 'hindi';
 }
@@ -43,6 +141,10 @@ export const SKILL_VALUES: Record<SkillRating, SkillValue> = {
 };
 
 export const SKILL_OPTIONS: SkillRating[] = ['Good', 'Average', 'Needs Improvement'];
+
+// ============================================================
+// CALCULATION FUNCTIONS
+// ============================================================
 
 /**
  * Calculates total from skill ratings
@@ -65,11 +167,12 @@ export function getMaxPossibleScore(subjectRatings: Record<string, SkillRatingOr
 }
 
 /**
- * Creates a new empty student with unselected ratings for English skills
+ * Creates a new empty student with default ratings for the given subject
  */
-export function createEmptyStudent(serialNo: number): Student {
+export function createEmptyStudent(serialNo: number, subject: SubjectType): Student {
+  const skills = getSkillsForSubject(subject);
   const subjectRatings: Record<string, SkillRatingOrUnselected> = {};
-  ENGLISH_SKILLS.forEach(skill => {
+  skills.forEach(skill => {
     subjectRatings[skill] = 'Good'; // Default to Good for manually added students
   });
   
@@ -79,7 +182,7 @@ export function createEmptyStudent(serialNo: number): Student {
     name: '',
     rollNumber: '',
     subjectRatings,
-    total: ENGLISH_SKILLS.length * 2, // All "Good" = 2 points each
+    total: skills.length * 2, // All "Good" = 2 points each
     remark: '',
     isGeneratingRemark: false,
   };
@@ -87,18 +190,20 @@ export function createEmptyStudent(serialNo: number): Student {
 
 export function getDefaultAssessmentData(): AssessmentData {
   return {
-    schoolName: 'Cambridge Court High School',
+    schoolName: '',
     className: '',
     section: '',
     totalStrength: 0,
-    students: [createEmptyStudent(1)],
+    subject: 'English',
+    students: [],
     language: 'english',
   };
 }
 
-/**
- * Calculate class performance statistics for English skills
- */
+// ============================================================
+// CLASS PERFORMANCE STATISTICS
+// ============================================================
+
 export interface ClassPerformanceStats {
   skillAverages: Record<string, number>;
   overallAverage: number;
@@ -110,7 +215,8 @@ export interface ClassPerformanceStats {
   };
 }
 
-export function calculateClassPerformance(students: Student[]): ClassPerformanceStats {
+export function calculateClassPerformance(students: Student[], subject: SubjectType): ClassPerformanceStats {
+  const skills = getSkillsForSubject(subject);
   const validStudents = students.filter(s => s.name.trim());
   
   if (validStudents.length === 0) {
@@ -123,7 +229,7 @@ export function calculateClassPerformance(students: Student[]): ClassPerformance
   }
 
   const skillTotals: Record<string, { sum: number; count: number }> = {};
-  ENGLISH_SKILLS.forEach(skill => {
+  skills.forEach(skill => {
     skillTotals[skill] = { sum: 0, count: 0 };
   });
 
@@ -142,7 +248,7 @@ export function calculateClassPerformance(students: Student[]): ClassPerformance
     totalScoreSum += student.total;
     totalMaxSum += maxScore;
 
-    ENGLISH_SKILLS.forEach(skill => {
+    skills.forEach(skill => {
       const rating = student.subjectRatings[skill];
       if (rating !== undefined) {
         skillTotals[skill].sum += SKILL_VALUES[rating];
@@ -152,7 +258,7 @@ export function calculateClassPerformance(students: Student[]): ClassPerformance
   });
 
   const skillAverages: Record<string, number> = {};
-  ENGLISH_SKILLS.forEach(skill => {
+  skills.forEach(skill => {
     const { sum, count } = skillTotals[skill];
     skillAverages[skill] = count > 0 ? (sum / count / 2) * 100 : 0; // Convert to percentage
   });

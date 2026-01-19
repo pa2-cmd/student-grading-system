@@ -4,44 +4,84 @@ import {
   SkillRating, 
   SkillRatingOrUnselected, 
   calculateTotal,
-  ENGLISH_SKILLS 
+  getSkillsForSubject,
+  SubjectType,
+  SUBJECTS
 } from '@/types/assessment';
 
 // ============================================================
-// ENGLISH ASSESSMENT - EXCEL IMPORT
-// Strict column mapping for English-only assessment
+// MULTI-SUBJECT EXCEL IMPORT
+// Smart column mapping for all subjects
 // ============================================================
 
-// Expected headers for the English assessment table
-const EXPECTED_HEADERS = [
-  'S.No', 'Serial No', 'Sr. No', 'SNo',
-  'Roll No', 'Roll Number', 'RollNo',
-  'Student Name', 'Name', 'Student',
-  'Speaking & Listening Skills', 'Speaking', 'Listening', 'Speaking & Listening',
-  'Writing Skills', 'Writing',
-  'Vocabulary',
-  'Grammar Usage', 'Grammar',
-  'Reading Comprehension', 'Reading',
-  'Total',
-  'Remarks', 'Remark', 'Review', 'AI Remarks'
-] as const;
-
-// Required headers (must be present)
-const REQUIRED_HEADERS = ['S.No', 'Serial No', 'Sr. No', 'SNo', 'Student Name', 'Name', 'Student'];
-
-// English skill columns mapping
-const SKILL_HEADER_MAP: Record<string, string> = {
-  'Speaking & Listening Skills': 'Speaking & Listening Skills',
-  'Speaking & Listening': 'Speaking & Listening Skills',
-  'Speaking': 'Speaking & Listening Skills',
-  'Listening': 'Speaking & Listening Skills',
-  'Writing Skills': 'Writing Skills',
-  'Writing': 'Writing Skills',
-  'Vocabulary': 'Vocabulary',
-  'Grammar Usage': 'Grammar Usage',
-  'Grammar': 'Grammar Usage',
-  'Reading Comprehension': 'Reading Comprehension',
-  'Reading': 'Reading Comprehension',
+// Skill column mappings for all subjects
+const SKILL_HEADER_MAPS: Record<SubjectType, Record<string, string>> = {
+  'English': {
+    'Speaking & Listening Skills': 'Speaking & Listening Skills',
+    'Speaking & Listening': 'Speaking & Listening Skills',
+    'Speaking': 'Speaking & Listening Skills',
+    'Listening': 'Speaking & Listening Skills',
+    'Writing Skills': 'Writing Skills',
+    'Writing': 'Writing Skills',
+    'Vocabulary': 'Vocabulary',
+    'Grammar Usage': 'Grammar Usage',
+    'Grammar': 'Grammar Usage',
+    'Reading Comprehension': 'Reading Comprehension',
+    'Reading': 'Reading Comprehension',
+  },
+  'Maths': {
+    'Conceptual Understanding': 'Conceptual Understanding',
+    'Conceptual': 'Conceptual Understanding',
+    'Problem Solving Skills': 'Problem Solving Skills',
+    'Problem Solving': 'Problem Solving Skills',
+    'Calculation Accuracy': 'Calculation Accuracy',
+    'Calculation': 'Calculation Accuracy',
+    'Real Life Application': 'Real Life Application',
+    'Real Life': 'Real Life Application',
+    'Application': 'Real Life Application',
+    'Maths Vocabulary': 'Maths Vocabulary',
+    'Math Vocab': 'Maths Vocabulary',
+    'Data Handling': 'Data Handling',
+    'Data': 'Data Handling',
+    'Geometry Skills': 'Geometry Skills',
+    'Geometry': 'Geometry Skills',
+    'Algebra Skills': 'Algebra Skills',
+    'Algebra': 'Algebra Skills',
+    'Alzebra': 'Algebra Skills',
+    'Alzebra Skills': 'Algebra Skills',
+  },
+  'Science': {
+    'Concept Clarity': 'Concept Clarity',
+    'Concepts': 'Concept Clarity',
+    'Science Vocabulary': 'Science Vocabulary',
+    'Sci Vocab': 'Science Vocabulary',
+    'Observational Skills': 'Observational Skills',
+    'Observation': 'Observational Skills',
+    'Inquiry Based Questioning': 'Inquiry Based Questioning',
+    'Inquiry': 'Inquiry Based Questioning',
+    'Real Life Application': 'Real Life Application',
+    'Application': 'Real Life Application',
+    'Reasoning': 'Reasoning',
+    'Innovative Ideas': 'Innovative Ideas',
+    'Innovation': 'Innovative Ideas',
+  },
+  'Social Science': {
+    'Awareness Of Surrounding': 'Awareness Of Surrounding',
+    'Awareness': 'Awareness Of Surrounding',
+    'Concept Clarity': 'Concept Clarity',
+    'Concepts': 'Concept Clarity',
+    'Social Science Vocabulary': 'Social Science Vocabulary',
+    'SS Vocab': 'Social Science Vocabulary',
+    'Ability To Explain': 'Ability To Explain',
+    'Explanation': 'Ability To Explain',
+    'Inquiry Based Questioning': 'Inquiry Based Questioning',
+    'Inquiry': 'Inquiry Based Questioning',
+    'Real Life Application': 'Real Life Application',
+    'Application': 'Real Life Application',
+    'Reasoning': 'Reasoning',
+    'Map Skills': 'Map Skills',
+    'Maps': 'Map Skills',
+  },
 };
 
 // ============================================================
@@ -90,6 +130,57 @@ function parseSkillRating(value: any): SkillRatingOrUnselected {
 }
 
 // ============================================================
+// SUBJECT DETECTION FROM SHEET
+// ============================================================
+
+function detectSubjectFromSheet(sheet: XLSX.WorkSheet, headerRow: number): SubjectType {
+  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+  
+  // First, check metadata rows for explicit subject mention
+  for (let rowIdx = 0; rowIdx < headerRow; rowIdx++) {
+    for (let colIdx = range.s.c; colIdx <= Math.min(range.e.c, range.s.c + 5); colIdx++) {
+      const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: colIdx });
+      const cell = sheet[cellAddr];
+      if (cell && cell.v) {
+        const text = String(cell.v).toLowerCase();
+        if (text.includes('maths') || text.includes('mathematics')) return 'Maths';
+        if (text.includes('science') && !text.includes('social')) return 'Science';
+        if (text.includes('social science') || text.includes('social studies')) return 'Social Science';
+        if (text.includes('english')) return 'English';
+      }
+    }
+  }
+  
+  // Check header row for subject-specific columns
+  const headerCols: string[] = [];
+  for (let colIdx = range.s.c; colIdx <= range.e.c; colIdx++) {
+    const cellAddr = XLSX.utils.encode_cell({ r: headerRow, c: colIdx });
+    const cell = sheet[cellAddr];
+    if (cell && cell.v) {
+      headerCols.push(String(cell.v).toLowerCase());
+    }
+  }
+  
+  const headerText = headerCols.join(' ');
+  
+  // Check for unique skill keywords
+  if (headerText.includes('algebra') || headerText.includes('geometry') || headerText.includes('calculation')) {
+    return 'Maths';
+  }
+  if (headerText.includes('observational') || headerText.includes('innovative') || (headerText.includes('science') && headerText.includes('vocab'))) {
+    return 'Science';
+  }
+  if (headerText.includes('map skill') || headerText.includes('awareness') || (headerText.includes('social') && headerText.includes('vocab'))) {
+    return 'Social Science';
+  }
+  if (headerText.includes('speaking') || headerText.includes('listening') || headerText.includes('grammar') || headerText.includes('reading comprehension')) {
+    return 'English';
+  }
+  
+  return 'English'; // Default
+}
+
+// ============================================================
 // HEADER ROW DETECTION
 // Scans sheet to find the first row containing table headers
 // ============================================================
@@ -132,13 +223,9 @@ function detectHeaderRow(sheet: XLSX.WorkSheet): { headerRow: number; columnMap:
           hasStudentName = true;
         }
         
-        // Check for English skill headers
-        Object.entries(SKILL_HEADER_MAP).forEach(([key, mappedSkill]) => {
-          if (headerText.toLowerCase().includes(key.toLowerCase()) || 
-              key.toLowerCase().includes(headerText.toLowerCase())) {
-            columnMap[mappedSkill] = colIdx;
-          }
-        });
+        // Store all header columns for skill mapping
+        columnMap[`_header_${colIdx}`] = colIdx;
+        columnMap[`_headerText_${colIdx}`] = headerText as any;
         
         // Check for Total
         if (headerText.toLowerCase() === 'total') {
@@ -163,8 +250,41 @@ function detectHeaderRow(sheet: XLSX.WorkSheet): { headerRow: number; columnMap:
 }
 
 // ============================================================
+// MAP SKILL COLUMNS FOR DETECTED SUBJECT
+// ============================================================
+
+function mapSkillColumns(
+  sheet: XLSX.WorkSheet, 
+  headerRow: number, 
+  columnMap: Record<string, number>,
+  subject: SubjectType
+): Record<string, number> {
+  const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+  const skillMap = SKILL_HEADER_MAPS[subject];
+  const skillColumnMap: Record<string, number> = {};
+  
+  for (let colIdx = range.s.c; colIdx <= range.e.c; colIdx++) {
+    const cellAddr = XLSX.utils.encode_cell({ r: headerRow, c: colIdx });
+    const cell = sheet[cellAddr];
+    
+    if (cell && cell.v !== undefined) {
+      const headerText = String(cell.v).trim();
+      
+      // Check against skill mappings
+      Object.entries(skillMap).forEach(([key, mappedSkill]) => {
+        if (headerText.toLowerCase().includes(key.toLowerCase()) || 
+            key.toLowerCase().includes(headerText.toLowerCase())) {
+          skillColumnMap[mappedSkill] = colIdx;
+        }
+      });
+    }
+  }
+  
+  return skillColumnMap;
+}
+
+// ============================================================
 // METADATA EXTRACTION
-// Extracts school name, class, section from rows above header
 // ============================================================
 
 interface ExtractedMetadata {
@@ -172,6 +292,7 @@ interface ExtractedMetadata {
   className?: string;
   section?: string;
   assessmentName?: string;
+  subject?: SubjectType;
 }
 
 function extractMetadata(sheet: XLSX.WorkSheet, headerRow: number): ExtractedMetadata {
@@ -209,6 +330,13 @@ function extractMetadata(sheet: XLSX.WorkSheet, headerRow: number): ExtractedMet
       if (match) metadata.section = match[1].trim();
     }
     
+    if (lowerText.includes('subject') && !metadata.subject) {
+      if (lowerText.includes('maths') || lowerText.includes('mathematics')) metadata.subject = 'Maths';
+      else if (lowerText.includes('science') && !lowerText.includes('social')) metadata.subject = 'Science';
+      else if (lowerText.includes('social')) metadata.subject = 'Social Science';
+      else if (lowerText.includes('english')) metadata.subject = 'English';
+    }
+    
     if (lowerText.includes('assessment') || lowerText.includes('term') || lowerText.includes('exam')) {
       metadata.assessmentName = rowText;
     }
@@ -225,11 +353,12 @@ export interface ImportResult {
   success: boolean;
   students: Student[];
   metadata: ExtractedMetadata;
+  detectedSubject: SubjectType;
   errors: string[];
   warnings: string[];
 }
 
-export async function importStudentsFromExcel(file: File): Promise<ImportResult> {
+export async function importStudentsFromExcel(file: File, targetSubject?: SubjectType): Promise<ImportResult> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     
@@ -250,6 +379,7 @@ export async function importStudentsFromExcel(file: File): Promise<ImportResult>
             success: false,
             students: [],
             metadata: {},
+            detectedSubject: targetSubject || 'English',
             errors: ['Could not find table headers. Required: S.No and Student Name columns.'],
             warnings: [],
           });
@@ -261,16 +391,23 @@ export async function importStudentsFromExcel(file: File): Promise<ImportResult>
         // Step 2: Extract metadata from rows above header
         const metadata = extractMetadata(sheet, headerRow);
         
-        // Step 3: Check for English skill columns
-        const detectedSkills = ENGLISH_SKILLS.filter(skill => columnMap[skill] !== undefined);
+        // Step 3: Detect or use provided subject
+        const detectedSubject = targetSubject || metadata.subject || detectSubjectFromSheet(sheet, headerRow);
+        const skills = getSkillsForSubject(detectedSubject);
+        
+        // Step 4: Map skill columns for the subject
+        const skillColumnMap = mapSkillColumns(sheet, headerRow, columnMap, detectedSubject);
+        
+        // Step 5: Check for skill columns
+        const detectedSkills = skills.filter(skill => skillColumnMap[skill] !== undefined);
         if (detectedSkills.length === 0) {
-          warnings.push('No English skill columns detected. Students will have empty ratings.');
-        } else if (detectedSkills.length < ENGLISH_SKILLS.length) {
-          const missing = ENGLISH_SKILLS.filter(s => !detectedSkills.includes(s));
-          warnings.push(`Missing skill columns: ${missing.join(', ')}`);
+          warnings.push(`No ${detectedSubject} skill columns detected. Students will have empty ratings.`);
+        } else if (detectedSkills.length < skills.length) {
+          const missing = skills.filter(s => !detectedSkills.includes(s));
+          warnings.push(`Missing skill columns: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '...' : ''}`);
         }
         
-        // Step 4: Parse student rows
+        // Step 6: Parse student rows
         const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
         const students: Student[] = [];
         
@@ -306,7 +443,7 @@ export async function importStudentsFromExcel(file: File): Promise<ImportResult>
           const name = nameRaw ? String(nameRaw).trim() : '';
           if (!name) continue;
           
-          // Parse serial number - preserve exactly as in sheet (including 0)
+          // Parse serial number
           let serialNo: number;
           if (serialNoRaw !== undefined && serialNoRaw !== null && serialNoRaw !== '') {
             serialNo = parseInt(String(serialNoRaw), 10);
@@ -322,8 +459,8 @@ export async function importStudentsFromExcel(file: File): Promise<ImportResult>
           
           // Parse skill ratings
           const subjectRatings: Record<string, SkillRatingOrUnselected> = {};
-          ENGLISH_SKILLS.forEach(skill => {
-            const value = getCellValue(columnMap[skill]);
+          skills.forEach(skill => {
+            const value = getCellValue(skillColumnMap[skill]);
             subjectRatings[skill] = parseSkillRating(value);
           });
           
@@ -359,6 +496,7 @@ export async function importStudentsFromExcel(file: File): Promise<ImportResult>
             success: false,
             students: [],
             metadata,
+            detectedSubject,
             errors: ['No student data found in the Excel file.'],
             warnings,
           });
@@ -369,6 +507,7 @@ export async function importStudentsFromExcel(file: File): Promise<ImportResult>
           success: true,
           students,
           metadata,
+          detectedSubject,
           errors,
           warnings,
         });

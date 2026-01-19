@@ -5,8 +5,10 @@ import {
   Student,
   SKILL_VALUES, 
   getMaxPossibleScore, 
-  ENGLISH_SKILLS,
-  calculateClassPerformance 
+  getSkillsForSubject,
+  getSkillDisplayName,
+  calculateClassPerformance,
+  SubjectType
 } from '@/types/assessment';
 import { generateClassInsights } from './remarkGenerator';
 
@@ -22,11 +24,12 @@ export function exportToPDF(data: AssessmentData): void {
   
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 15;
+  const skills = getSkillsForSubject(data.subject);
   
   // Header
   doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
-  doc.text(data.schoolName || 'English Assessment Report', pageWidth / 2, 15, { align: 'center' });
+  doc.text(data.schoolName || `${data.subject} Assessment Report`, pageWidth / 2, 15, { align: 'center' });
   
   // Sub-header
   doc.setFontSize(12);
@@ -34,17 +37,18 @@ export function exportToPDF(data: AssessmentData): void {
   const classSection = [data.className, data.section].filter(Boolean).join(' - ');
   const subHeader = [
     classSection ? `Class: ${classSection}` : '',
+    `Subject: ${data.subject}`,
     data.totalStrength ? `Total Strength: ${data.totalStrength}` : '',
     `Date: ${new Date().toLocaleDateString()}`,
   ].filter(Boolean).join(' | ');
   doc.text(subHeader, pageWidth / 2, 22, { align: 'center' });
   
-  // Prepare table data with English skills only
+  // Prepare table data with subject skills
   const headers = [
     'S.No',
     'Roll No',
     'Student Name',
-    ...ENGLISH_SKILLS.map(s => s.replace(' Skills', '').replace(' Usage', '')),
+    ...skills.map(s => getSkillDisplayName(s)),
     'Total',
     'Remarks',
   ];
@@ -58,7 +62,7 @@ export function exportToPDF(data: AssessmentData): void {
         student.serialNo,
         student.rollNumber || '-',
         student.name,
-        ...ENGLISH_SKILLS.map(skill => {
+        ...skills.map(skill => {
           const rating = student.subjectRatings[skill];
           if (rating === undefined) return '-';
           return `${rating} (${SKILL_VALUES[rating]})`;
@@ -68,6 +72,11 @@ export function exportToPDF(data: AssessmentData): void {
       ];
     });
   
+  // Calculate dynamic column widths based on number of skills
+  const fixedWidth = 12 + 18 + 32 + 15 + 65; // S.No + Roll + Name + Total + Remarks
+  const availableWidth = pageWidth - 2 * margin - fixedWidth;
+  const skillColWidth = Math.max(15, availableWidth / skills.length);
+  
   // Generate table
   autoTable(doc, {
     head: [headers],
@@ -75,7 +84,7 @@ export function exportToPDF(data: AssessmentData): void {
     startY: 28,
     margin: { left: margin, right: margin },
     styles: {
-      fontSize: 8,
+      fontSize: 7,
       cellPadding: 2,
       overflow: 'linebreak',
       halign: 'left',
@@ -85,13 +94,14 @@ export function exportToPDF(data: AssessmentData): void {
       textColor: 255,
       fontStyle: 'bold',
       halign: 'center',
+      fontSize: 6,
     },
     columnStyles: {
-      0: { halign: 'center', cellWidth: 12 },  // S.No
-      1: { halign: 'center', cellWidth: 18 },  // Roll No
-      2: { cellWidth: 32 },                     // Name
-      [headers.length - 2]: { halign: 'center', cellWidth: 15 }, // Total
-      [headers.length - 1]: { cellWidth: 65 }, // Remarks
+      0: { halign: 'center', cellWidth: 10 },  // S.No
+      1: { halign: 'center', cellWidth: 15 },  // Roll No
+      2: { cellWidth: 28 },                     // Name
+      [headers.length - 2]: { halign: 'center', cellWidth: 12 }, // Total
+      [headers.length - 1]: { cellWidth: 55 }, // Remarks
     },
     alternateRowStyles: {
       fillColor: [245, 247, 250],
@@ -101,7 +111,7 @@ export function exportToPDF(data: AssessmentData): void {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'italic');
       doc.text(
-        `Generated on ${new Date().toLocaleString()} | English Assessment Tool`,
+        `Generated on ${new Date().toLocaleString()} | ${data.subject} Assessment Tool`,
         pageWidth / 2,
         doc.internal.pageSize.getHeight() - 10,
         { align: 'center' }
@@ -111,7 +121,7 @@ export function exportToPDF(data: AssessmentData): void {
   
   // Save the PDF
   const classInfo = [data.className, data.section].filter(Boolean).join('_');
-  const fileName = `${data.schoolName || 'English_Assessment'}_${classInfo || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`;
+  const fileName = `${data.schoolName || data.subject + '_Assessment'}_${classInfo || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`;
   doc.save(fileName);
 }
 
@@ -128,6 +138,7 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 20;
   let yPos = 20;
+  const skills = getSkillsForSubject(data.subject);
   
   // School Header
   doc.setFontSize(16);
@@ -147,7 +158,7 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
   // Title
   doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.text('English Assessment Report', pageWidth / 2, yPos + 4, { align: 'center' });
+  doc.text(`${data.subject} Assessment Report`, pageWidth / 2, yPos + 4, { align: 'center' });
   yPos += 15;
   
   // Student Info Box
@@ -165,16 +176,16 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
   // Skills Assessment Table
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.text('English Skills Assessment', margin, yPos);
+  doc.text(`${data.subject} Skills Assessment`, margin, yPos);
   yPos += 5;
   
   const maxScore = getMaxPossibleScore(student.subjectRatings);
   
-  const skillsTableData = ENGLISH_SKILLS.map(skill => {
+  const skillsTableData = skills.map(skill => {
     const rating = student.subjectRatings[skill];
     const value = rating ? SKILL_VALUES[rating] : '-';
     return [
-      skill.replace(' Skills', '').replace(' Usage', ''),
+      getSkillDisplayName(skill),
       rating || 'Not Assessed',
       typeof value === 'number' ? `${value}/2` : value,
     ];
@@ -189,8 +200,8 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
     startY: yPos,
     margin: { left: margin, right: margin },
     styles: {
-      fontSize: 10,
-      cellPadding: 4,
+      fontSize: 9,
+      cellPadding: 3,
     },
     headStyles: {
       fillColor: [41, 98, 255],
@@ -198,9 +209,9 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
       fontStyle: 'bold',
     },
     columnStyles: {
-      0: { cellWidth: 70 },
-      1: { cellWidth: 50, halign: 'center' },
-      2: { cellWidth: 30, halign: 'center' },
+      0: { cellWidth: 65 },
+      1: { cellWidth: 45, halign: 'center' },
+      2: { cellWidth: 25, halign: 'center' },
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252],
@@ -215,37 +226,37 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
   doc.text('Performance Visualization', margin, yPos);
   yPos += 8;
   
-  const barHeight = 8;
-  const maxBarWidth = pageWidth - 2 * margin - 60;
+  const barHeight = 7;
+  const maxBarWidth = pageWidth - 2 * margin - 55;
   
-  ENGLISH_SKILLS.forEach((skill, index) => {
+  skills.forEach((skill, index) => {
     const rating = student.subjectRatings[skill];
     const value = rating ? SKILL_VALUES[rating] : 0;
     const percentage = (value / 2) * 100;
     const barWidth = (percentage / 100) * maxBarWidth;
     
     // Skill label
-    doc.setFontSize(9);
+    doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
-    const shortSkill = skill.replace(' Skills', '').replace(' Usage', '').substring(0, 15);
-    doc.text(shortSkill, margin, yPos + index * 12 + 5);
+    const shortSkill = getSkillDisplayName(skill).substring(0, 12);
+    doc.text(shortSkill, margin, yPos + index * 10 + 5);
     
     // Background bar
     doc.setFillColor(230, 230, 230);
-    doc.roundedRect(margin + 55, yPos + index * 12, maxBarWidth, barHeight, 2, 2, 'F');
+    doc.roundedRect(margin + 50, yPos + index * 10, maxBarWidth, barHeight, 2, 2, 'F');
     
     // Filled bar
     if (barWidth > 0) {
       const color = percentage >= 75 ? [76, 175, 80] : percentage >= 50 ? [255, 193, 7] : [244, 67, 54];
       doc.setFillColor(color[0], color[1], color[2]);
-      doc.roundedRect(margin + 55, yPos + index * 12, barWidth, barHeight, 2, 2, 'F');
+      doc.roundedRect(margin + 50, yPos + index * 10, barWidth, barHeight, 2, 2, 'F');
     }
     
     // Percentage label
-    doc.text(`${Math.round(percentage)}%`, margin + 60 + maxBarWidth, yPos + index * 12 + 5);
+    doc.text(`${Math.round(percentage)}%`, margin + 55 + maxBarWidth, yPos + index * 10 + 5);
   });
   
-  yPos += ENGLISH_SKILLS.length * 12 + 10;
+  yPos += skills.length * 10 + 10;
   
   // AI Review Section
   if (student.remark) {
@@ -274,7 +285,7 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
   );
   
   // Save
-  const fileName = `${student.name.replace(/\s+/g, '_')}_English_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+  const fileName = `${student.name.replace(/\s+/g, '_')}_${data.subject}_Report_${new Date().toISOString().split('T')[0]}.pdf`;
   doc.save(fileName);
 }
 
@@ -291,8 +302,9 @@ export function exportClassPerformancePDF(data: AssessmentData): void {
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 20;
   let yPos = 20;
+  const skills = getSkillsForSubject(data.subject);
   
-  const stats = calculateClassPerformance(data.students);
+  const stats = calculateClassPerformance(data.students, data.subject);
   
   // Header
   doc.setFontSize(18);
@@ -301,7 +313,7 @@ export function exportClassPerformancePDF(data: AssessmentData): void {
   yPos += 10;
   
   doc.setFontSize(14);
-  doc.text('Class Performance Analysis - English', pageWidth / 2, yPos, { align: 'center' });
+  doc.text(`Class Performance Analysis - ${data.subject}`, pageWidth / 2, yPos, { align: 'center' });
   yPos += 8;
   
   // Class info
@@ -322,40 +334,41 @@ export function exportClassPerformancePDF(data: AssessmentData): void {
   doc.text('Skill-wise Class Average', margin, yPos);
   yPos += 5;
   
-  const skillTableData = ENGLISH_SKILLS.map(skill => [
-    skill.replace(' Skills', '').replace(' Usage', ''),
+  const skillTableData = skills.map(skill => [
+    getSkillDisplayName(skill),
     `${Math.round(stats.skillAverages[skill] || 0)}%`,
   ]);
   
   skillTableData.push(['Overall Class Average', `${Math.round(stats.overallAverage)}%`]);
   
   autoTable(doc, {
-    head: [['English Skill', 'Class Average']],
+    head: [[`${data.subject} Skill`, 'Class Average']],
     body: skillTableData,
     startY: yPos,
     margin: { left: margin, right: pageWidth / 2 + 10 },
-    styles: { fontSize: 10, cellPadding: 3 },
+    styles: { fontSize: 9, cellPadding: 3 },
     headStyles: { fillColor: [41, 98, 255], textColor: 255, fontStyle: 'bold' },
     columnStyles: {
-      0: { cellWidth: 60 },
-      1: { cellWidth: 30, halign: 'center' },
+      0: { cellWidth: 55 },
+      1: { cellWidth: 25, halign: 'center' },
     },
   });
   
   // Bar chart on right side
   const chartX = pageWidth / 2 + 15;
   const chartY = yPos + 5;
-  const barHeight = 10;
-  const maxBarWidth = 60;
+  const barHeight = 8;
+  const maxBarWidth = 55;
   
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.text('Performance Chart', chartX, chartY - 2);
   
-  ENGLISH_SKILLS.forEach((skill, index) => {
+  const displaySkills = skills.slice(0, Math.min(skills.length, 8)); // Limit to 8 for chart
+  displaySkills.forEach((skill, index) => {
     const avg = stats.skillAverages[skill] || 0;
     const barWidth = (avg / 100) * maxBarWidth;
-    const y = chartY + 5 + index * 14;
+    const y = chartY + 5 + index * 12;
     
     // Background
     doc.setFillColor(230, 230, 230);
@@ -369,9 +382,9 @@ export function exportClassPerformancePDF(data: AssessmentData): void {
     }
     
     // Label
-    doc.setFontSize(8);
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
-    doc.text(`${Math.round(avg)}%`, chartX + maxBarWidth + 3, y + 7);
+    doc.text(`${Math.round(avg)}%`, chartX + maxBarWidth + 3, y + 6);
   });
   
   yPos = (doc as any).lastAutoTable.finalY + 15;
@@ -426,7 +439,8 @@ export function exportClassPerformancePDF(data: AssessmentData): void {
     stats.skillAverages, 
     stats.distribution, 
     stats.totalStudents, 
-    data.language
+    data.language,
+    data.subject
   );
   
   doc.setFontSize(10);
@@ -438,7 +452,7 @@ export function exportClassPerformancePDF(data: AssessmentData): void {
   doc.setFontSize(8);
   doc.setFont('helvetica', 'italic');
   doc.text(
-    `Generated on ${new Date().toLocaleString()} | English Assessment Tool`,
+    `Generated on ${new Date().toLocaleString()} | ${data.subject} Assessment Tool`,
     pageWidth / 2,
     doc.internal.pageSize.getHeight() - 10,
     { align: 'center' }
@@ -446,6 +460,6 @@ export function exportClassPerformancePDF(data: AssessmentData): void {
   
   // Save
   const classInfo = [data.className, data.section].filter(Boolean).join('_');
-  const fileName = `Class_Performance_${classInfo || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`;
+  const fileName = `Class_Performance_${data.subject}_${classInfo || 'Report'}_${new Date().toISOString().split('T')[0]}.pdf`;
   doc.save(fileName);
 }
