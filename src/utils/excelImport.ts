@@ -85,9 +85,48 @@ const SKILL_HEADER_MAPS: Record<SubjectType, Record<string, string>> = {
 };
 
 // ============================================================
+// SECURITY: STRING SANITIZATION
+// Removes potentially dangerous characters and limits length
+// ============================================================
+
+const MAX_STRING_LENGTH = 500;
+const MAX_REMARK_LENGTH = 5000;
+const MAX_NAME_LENGTH = 200;
+
+function sanitizeString(value: any, maxLength: number = MAX_STRING_LENGTH): string {
+  if (value === null || value === undefined) return '';
+  
+  let str = String(value);
+  
+  // Remove null bytes and control characters (except newlines/tabs for remarks)
+  str = str.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  
+  // Remove potential script injection patterns
+  str = str.replace(/<script[^>]*>.*?<\/script>/gi, '');
+  str = str.replace(/javascript:/gi, '');
+  str = str.replace(/on\w+=/gi, '');
+  
+  // Trim and limit length
+  str = str.trim().slice(0, maxLength);
+  
+  return str;
+}
+
+function sanitizeName(value: any): string {
+  const sanitized = sanitizeString(value, MAX_NAME_LENGTH);
+  // Names should only contain letters, spaces, hyphens, apostrophes, periods
+  return sanitized.replace(/[^\p{L}\p{M}\s\-'.]/gu, '').trim();
+}
+
+function sanitizeRemark(value: any): string {
+  return sanitizeString(value, MAX_REMARK_LENGTH);
+}
+
+// ============================================================
 // SKILL RATING PARSER
 // Handles: 0, 1, 2, Good, Average, Needs Improvement, N/A, blank
 // ZERO IS VALID DATA - must not be treated as empty
+// SECURITY: Only accepts valid rating values (0, 1, 2)
 // ============================================================
 
 function parseSkillRating(value: any): SkillRatingOrUnselected {
@@ -102,30 +141,34 @@ function parseSkillRating(value: any): SkillRatingOrUnselected {
     return undefined;
   }
   
-  // Handle numeric values (0, 1, 2) - ZERO IS VALID
+  // SECURITY: Strict numeric validation - only accept 0, 1, 2
   const num = Number(value);
   if (!isNaN(num)) {
+    // Only accept exactly 0, 1, or 2 - reject other numbers
     if (num === 0) return 'Needs Improvement';
     if (num === 1) return 'Average';
     if (num === 2) return 'Good';
+    // Reject invalid numbers (3, 4, -1, 1.5, etc.)
+    return undefined;
   }
   
-  // Handle text ratings
-  if (str.includes('good') || str.includes('strong') || str.includes('excellent')) {
+  // Handle text ratings - use strict matching
+  if (str === 'good' || str === 'strong' || str === 'excellent') {
     return 'Good';
   }
-  if (str.includes('average') || str.includes('developing') || str.includes('moderate')) {
+  if (str === 'average' || str === 'developing' || str === 'moderate') {
     return 'Average';
   }
-  if (str.includes('needs') || str.includes('improvement') || str.includes('poor') || str.includes('weak')) {
+  if (str === 'needs improvement' || str === 'poor' || str === 'weak') {
     return 'Needs Improvement';
   }
   
-  // Handle mixed formats like "Good (2)" or "2-Good"
-  if (str.includes('2')) return 'Good';
-  if (str.includes('1')) return 'Average';
-  if (str.includes('0')) return 'Needs Improvement';
+  // Handle mixed formats like "Good (2)" or "2-Good" - extract safely
+  if (str.includes('good') || str.includes('2')) return 'Good';
+  if (str.includes('average') || str.includes('1')) return 'Average';
+  if (str.includes('needs') || str.includes('improvement') || str.includes('0')) return 'Needs Improvement';
   
+  // SECURITY: Reject any unrecognized values
   return undefined;
 }
 
@@ -358,7 +401,43 @@ export interface ImportResult {
   warnings: string[];
 }
 
+// ============================================================
+// SECURITY CONSTANTS
+// ============================================================
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_ROWS = 10000;
+const MAX_COLUMNS = 50;
+const EXPECTED_MIN_COLUMNS = 3; // At least S.No, Name, and one skill
+
 export async function importStudentsFromExcel(file: File, targetSubject?: SubjectType): Promise<ImportResult> {
+  // SECURITY: Validate file size before processing
+  if (file.size > MAX_FILE_SIZE) {
+    return {
+      success: false,
+      students: [],
+      metadata: {},
+      detectedSubject: targetSubject || 'English',
+      errors: [`File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB.`],
+      warnings: [],
+    };
+  }
+
+  // SECURITY: Validate file type
+  const validExtensions = ['.xlsx', '.xls', '.csv'];
+  const fileName = file.name.toLowerCase();
+  const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
+  if (!hasValidExtension) {
+    return {
+      success: false,
+      students: [],
+      metadata: {},
+      detectedSubject: targetSubject || 'English',
+      errors: ['Invalid file type. Only .xlsx, .xls, and .csv files are accepted.'],
+      warnings: [],
+    };
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     
@@ -376,7 +455,7 @@ export async function importStudentsFromExcel(file: File, targetSubject?: Subjec
         // - bookSheets: false prevents sheet enumeration beyond needed
         // - bookVBA: false prevents VBA macro parsing
         // - password: '' ensures no password-protected files are processed
-        // - sheetRows: 10000 limits row count to prevent DoS
+        // - sheetRows: limits row count to prevent DoS
         // - PRN: false prevents PRN file parsing
         const workbook = XLSX.read(data, { 
           type: 'array',
@@ -388,12 +467,65 @@ export async function importStudentsFromExcel(file: File, targetSubject?: Subjec
           bookProps: false,      // Don't parse document properties
           bookSheets: true,      // We need sheet names
           bookVBA: false,        // Don't parse VBA macros
-          sheetRows: 10000,      // Limit rows to prevent DoS
+          sheetRows: MAX_ROWS,   // Limit rows to prevent DoS
           WTF: false,            // Disable verbose parsing
           dense: false,          // Use sparse array format
         });
+        
+        // SECURITY: Validate workbook structure
+        if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+          resolve({
+            success: false,
+            students: [],
+            metadata: {},
+            detectedSubject: targetSubject || 'English',
+            errors: ['Invalid Excel file: No sheets found.'],
+            warnings: [],
+          });
+          return;
+        }
+
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
+        
+        // SECURITY: Validate sheet exists
+        if (!sheet || !sheet['!ref']) {
+          resolve({
+            success: false,
+            students: [],
+            metadata: {},
+            detectedSubject: targetSubject || 'English',
+            errors: ['Invalid Excel file: Empty or corrupted sheet.'],
+            warnings: [],
+          });
+          return;
+        }
+
+        // SECURITY: Validate sheet dimensions
+        const range = XLSX.utils.decode_range(sheet['!ref']);
+        if (range.e.c - range.s.c + 1 > MAX_COLUMNS) {
+          resolve({
+            success: false,
+            students: [],
+            metadata: {},
+            detectedSubject: targetSubject || 'English',
+            errors: [`Too many columns (${range.e.c - range.s.c + 1}). Maximum is ${MAX_COLUMNS}.`],
+            warnings: [],
+          });
+          return;
+        }
+        
+        if (range.e.c - range.s.c + 1 < EXPECTED_MIN_COLUMNS) {
+          resolve({
+            success: false,
+            students: [],
+            metadata: {},
+            detectedSubject: targetSubject || 'English',
+            errors: ['Invalid file structure: Not enough columns for tabular data.'],
+            warnings: [],
+          });
+          return;
+        }
         
         const errors: string[] = [];
         const warnings: string[] = [];
@@ -433,8 +565,7 @@ export async function importStudentsFromExcel(file: File, targetSubject?: Subjec
           warnings.push(`Missing skill columns: ${missing.slice(0, 3).join(', ')}${missing.length > 3 ? '...' : ''}`);
         }
         
-        // Step 6: Parse student rows
-        const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+        // Step 6: Parse student rows (reuse range from earlier validation)
         const students: Student[] = [];
         
         for (let rowIdx = headerRow + 1; rowIdx <= range.e.r; rowIdx++) {
@@ -459,52 +590,58 @@ export async function importStudentsFromExcel(file: File, targetSubject?: Subjec
             return cell ? cell.v : undefined;
           };
           
-          // Extract student data
+          // Extract student data with sanitization
           const serialNoRaw = getCellValue(columnMap['S.No']);
           const rollNoRaw = getCellValue(columnMap['Roll No']);
           const nameRaw = getCellValue(columnMap['Student Name']);
           const remarkRaw = getCellValue(columnMap['Remarks']);
           
-          // Skip if no name
-          const name = nameRaw ? String(nameRaw).trim() : '';
+          // SECURITY: Sanitize name - reject empty names
+          const name = sanitizeName(nameRaw);
           if (!name) continue;
           
-          // Parse serial number
+          // Parse serial number with validation
           let serialNo: number;
           if (serialNoRaw !== undefined && serialNoRaw !== null && serialNoRaw !== '') {
-            serialNo = parseInt(String(serialNoRaw), 10);
-            if (isNaN(serialNo)) serialNo = students.length + 1;
+            const parsed = parseInt(String(serialNoRaw), 10);
+            // SECURITY: Validate serial number is reasonable
+            serialNo = (!isNaN(parsed) && parsed > 0 && parsed <= MAX_ROWS) 
+              ? parsed 
+              : students.length + 1;
           } else {
             serialNo = students.length + 1;
           }
           
-          // Parse roll number
-          const rollNumber = rollNoRaw !== undefined && rollNoRaw !== null 
-            ? String(rollNoRaw).trim() 
-            : '';
+          // SECURITY: Sanitize roll number
+          const rollNumber = sanitizeString(rollNoRaw, 50);
           
-          // Parse skill ratings
+          // Parse skill ratings - only known skills for the subject
           const subjectRatings: Record<string, SkillRatingOrUnselected> = {};
           skills.forEach(skill => {
             const value = getCellValue(skillColumnMap[skill]);
+            // SECURITY: parseSkillRating only accepts valid ratings (0,1,2 or text equivalents)
             subjectRatings[skill] = parseSkillRating(value);
           });
           
-          // Parse or calculate total
+          // Parse or calculate total with validation
           const totalRaw = getCellValue(columnMap['Total']);
           let total: number;
           if (totalRaw !== undefined && !isNaN(Number(totalRaw))) {
             // If total contains "x/y" format, extract x
             const totalStr = String(totalRaw);
             const match = totalStr.match(/^(\d+)/);
-            total = match ? parseInt(match[1], 10) : calculateTotal(subjectRatings);
+            const parsed = match ? parseInt(match[1], 10) : calculateTotal(subjectRatings);
+            // SECURITY: Validate total is within reasonable bounds
+            const maxPossible = skills.length * 2;
+            total = (parsed >= 0 && parsed <= maxPossible) ? parsed : calculateTotal(subjectRatings);
           } else {
             total = calculateTotal(subjectRatings);
           }
           
-          // Parse remarks
-          const remark = remarkRaw ? String(remarkRaw).trim() : '';
+          // SECURITY: Sanitize remarks
+          const remark = sanitizeRemark(remarkRaw);
           
+          // SECURITY: Only include known fields - strip unknown fields
           students.push({
             id: crypto.randomUUID(),
             serialNo,
