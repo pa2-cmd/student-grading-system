@@ -136,9 +136,14 @@ function parseSkillRating(value: any): SkillRatingOrUnselected {
   // Convert to string and trim
   const str = String(value).trim().toLowerCase();
   
-  // Handle empty string or NA values - return undefined (unselected)
-  if (str === '' || str === 'na' || str === 'n/a' || str === '-' || str === 'select') {
+  // Handle empty string or unselected values - return undefined (unselected)
+  if (str === '' || str === '-' || str === 'select') {
     return undefined;
+  }
+  
+  // Handle NA explicitly
+  if (str === 'na' || str === 'n/a' || str === 'not applicable' || str === 'not assessed') {
+    return 'NA';
   }
   
   // SECURITY: Strict numeric validation - only accept 0, 1, 2

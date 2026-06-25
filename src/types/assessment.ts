@@ -1,7 +1,7 @@
 // Multi-Subject Assessment Tool
 // Supports: English, Maths, Science, Social Science
 // Skill ratings - undefined means "unselected" (blank/NA from Excel)
-export type SkillRating = 'Good' | 'Average' | 'Needs Improvement';
+export type SkillRating = 'Good' | 'Average' | 'Needs Improvement' | 'NA';
 export type SkillRatingOrUnselected = SkillRating | undefined;
 export type SkillValue = 2 | 1 | 0;
 
@@ -137,9 +137,10 @@ export const SKILL_VALUES: Record<SkillRating, SkillValue> = {
   'Good': 2,
   'Average': 1,
   'Needs Improvement': 0,
+  'NA': 0,
 };
 
-export const SKILL_OPTIONS: SkillRating[] = ['Good', 'Average', 'Needs Improvement'];
+export const SKILL_OPTIONS: SkillRating[] = ['Good', 'Average', 'Needs Improvement', 'NA'];
 
 // ============================================================
 // CALCULATION FUNCTIONS
@@ -151,18 +152,18 @@ export const SKILL_OPTIONS: SkillRating[] = ['Good', 'Average', 'Needs Improveme
  */
 export function calculateTotal(subjectRatings: Record<string, SkillRatingOrUnselected>): number {
   return Object.values(subjectRatings).reduce((sum, rating) => {
-    // Ignore blank/unselected fields - they don't count toward total
-    if (rating === undefined || rating === null) return sum;
+    // Ignore blank/unselected fields and NA - they don't count toward total
+    if (rating === undefined || rating === null || rating === 'NA') return sum;
     return sum + SKILL_VALUES[rating];
   }, 0);
 }
 
 /**
  * Gets the maximum possible score based on fields that have values
- * Only counts fields with actual ratings, not unselected ones
+ * Only counts fields with actual ratings, not unselected ones or NA
  */
 export function getMaxPossibleScore(subjectRatings: Record<string, SkillRatingOrUnselected>): number {
-  return Object.values(subjectRatings).filter(rating => rating !== undefined && rating !== null).length * 2;
+  return Object.values(subjectRatings).filter(rating => rating !== undefined && rating !== null && rating !== 'NA').length * 2;
 }
 
 /**
@@ -234,10 +235,14 @@ export function calculateClassPerformance(students: Student[], subject: SubjectT
   let totalScoreSum = 0;
   let totalMaxSum = 0;
   let high = 0, avg = 0, low = 0;
+  let activeStudentCount = 0;
 
   validStudents.forEach(student => {
     const maxScore = getMaxPossibleScore(student.subjectRatings);
-    const percentage = maxScore > 0 ? (student.total / maxScore) * 100 : 0;
+    if (maxScore === 0) return; // Skip students with no assessed skills (e.g. all NA)
+
+    activeStudentCount++;
+    const percentage = (student.total / maxScore) * 100;
 
     if (percentage >= 80) high++;
     else if (percentage >= 55) avg++;
@@ -248,7 +253,7 @@ export function calculateClassPerformance(students: Student[], subject: SubjectT
 
     skills.forEach(skill => {
       const rating = student.subjectRatings[skill];
-      if (rating !== undefined) {
+      if (rating !== undefined && rating !== 'NA') {
         skillTotals[skill].sum += SKILL_VALUES[rating];
         skillTotals[skill].count++;
       }
@@ -264,7 +269,7 @@ export function calculateClassPerformance(students: Student[], subject: SubjectT
   return {
     skillAverages,
     overallAverage: totalMaxSum > 0 ? (totalScoreSum / totalMaxSum) * 100 : 0,
-    totalStudents: validStudents.length,
+    totalStudents: activeStudentCount,
     distribution: { high, average: avg, low },
   };
 }

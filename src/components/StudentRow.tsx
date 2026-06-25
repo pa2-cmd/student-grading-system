@@ -38,7 +38,14 @@ export function StudentRow({
   const getTotalClass = () => {
     if (hasUnratedSkills) return 'text-muted-foreground';
     if (percentage >= 80) return 'text-skill-good font-bold';
-    if (percentage >= 50) return 'text-skill-average font-bold';
+    if (percentage >= 55) return 'text-skill-average font-bold';
+    return 'text-skill-needs font-bold';
+  };
+
+  const getPercentageClass = () => {
+    if (maxPossibleScore === 0) return 'text-muted-foreground';
+    if (percentage >= 80) return 'text-skill-good font-bold';
+    if (percentage >= 55) return 'text-skill-average font-bold';
     return 'text-skill-needs font-bold';
   };
 
@@ -87,6 +94,10 @@ export function StudentRow({
         ) : (
           `${student.total}/${maxPossibleScore}`
         )}
+      </td>
+      
+      <td className={`text-center text-lg ${getPercentageClass()}`}>
+        {maxPossibleScore > 0 ? `${Math.round(percentage)}%` : '-'}
       </td>
       
       <td className="min-w-[420px]">

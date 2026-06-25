@@ -49,6 +49,7 @@ export function exportToPDF(data: AssessmentData): void {
     'Student Name',
     ...skills.map(s => getSkillDisplayName(s)),
     'Total',
+    'Percentage',
     'Remarks',
   ];
   
@@ -56,6 +57,7 @@ export function exportToPDF(data: AssessmentData): void {
     .filter(s => s.name.trim())
     .map(student => {
       const maxScore = getMaxPossibleScore(student.subjectRatings);
+      const percentage = maxScore > 0 ? (student.total / maxScore) * 100 : 0;
       
       return [
         student.serialNo,
@@ -63,15 +65,17 @@ export function exportToPDF(data: AssessmentData): void {
         ...skills.map(skill => {
           const rating = student.subjectRatings[skill];
           if (rating === undefined) return '-';
+          if (rating === 'NA') return 'NA';
           return `${rating} (${SKILL_VALUES[rating]})`;
         }),
         `${student.total}/${maxScore}`,
+        maxScore > 0 ? `${Math.round(percentage)}%` : '-',
         student.remark || '-',
       ];
     });
   
   // Calculate dynamic column widths based on number of skills (NO Roll Number)
-  const fixedWidth = 12 + 32 + 15 + 65; // S.No + Name + Total + Remarks
+  const fixedWidth = 10 + 32 + 12 + 16 + 55; // S.No + Name + Total + Percentage + Remarks (125 mm)
   const availableWidth = pageWidth - 2 * margin - fixedWidth;
   const skillColWidth = Math.max(15, availableWidth / skills.length);
   
@@ -97,7 +101,8 @@ export function exportToPDF(data: AssessmentData): void {
     columnStyles: {
       0: { halign: 'center', cellWidth: 10 },  // S.No
       1: { cellWidth: 32 },                     // Name
-      [headers.length - 2]: { halign: 'center', cellWidth: 12 }, // Total
+      [headers.length - 3]: { halign: 'center', cellWidth: 12 }, // Total
+      [headers.length - 2]: { halign: 'center', cellWidth: 16 }, // Percentage
       [headers.length - 1]: { cellWidth: 55 }, // Remarks
     },
     alternateRowStyles: {
@@ -179,6 +184,13 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
   
   const skillsTableData = skills.map(skill => {
     const rating = student.subjectRatings[skill];
+    if (rating === 'NA') {
+      return [
+        getSkillDisplayName(skill),
+        'NA',
+        '-',
+      ];
+    }
     const value = rating ? SKILL_VALUES[rating] : '-';
     return [
       getSkillDisplayName(skill),
@@ -189,6 +201,10 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
   
   // Add total row
   skillsTableData.push(['TOTAL', '', `${student.total}/${maxScore}`]);
+  
+  // Add percentage row
+  const percentage = maxScore > 0 ? (student.total / maxScore) * 100 : 0;
+  skillsTableData.push(['PERCENTAGE', '', maxScore > 0 ? `${Math.round(percentage)}%` : '-']);
   
   autoTable(doc, {
     head: [['Skill Area', 'Rating', 'Score']],
@@ -227,9 +243,7 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
   
   skills.forEach((skill, index) => {
     const rating = student.subjectRatings[skill];
-    const value = rating ? SKILL_VALUES[rating] : 0;
-    const percentage = (value / 2) * 100;
-    const barWidth = (percentage / 100) * maxBarWidth;
+    const isNA = rating === 'NA';
     
     // Skill label
     doc.setFontSize(8);
@@ -241,15 +255,26 @@ export function exportStudentPDF(student: Student, data: AssessmentData): void {
     doc.setFillColor(230, 230, 230);
     doc.roundedRect(margin + 50, yPos + index * 10, maxBarWidth, barHeight, 2, 2, 'F');
     
-    // Filled bar
-    if (barWidth > 0) {
-      const color = percentage >= 75 ? [76, 175, 80] : percentage >= 50 ? [255, 193, 7] : [244, 67, 54];
-      doc.setFillColor(color[0], color[1], color[2]);
-      doc.roundedRect(margin + 50, yPos + index * 10, barWidth, barHeight, 2, 2, 'F');
+    if (isNA) {
+      doc.setFont('helvetica', 'italic');
+      doc.text('NA', margin + 52, yPos + index * 10 + 5);
+      doc.setFont('helvetica', 'normal');
+      doc.text('NA', margin + 55 + maxBarWidth, yPos + index * 10 + 5);
+    } else {
+      const value = rating ? SKILL_VALUES[rating] : 0;
+      const percentage = (value / 2) * 100;
+      const barWidth = (percentage / 100) * maxBarWidth;
+      
+      // Filled bar
+      if (barWidth > 0) {
+        const color = percentage >= 75 ? [76, 175, 80] : percentage >= 50 ? [255, 193, 7] : [244, 67, 54];
+        doc.setFillColor(color[0], color[1], color[2]);
+        doc.roundedRect(margin + 50, yPos + index * 10, barWidth, barHeight, 2, 2, 'F');
+      }
+      
+      // Percentage label
+      doc.text(`${Math.round(percentage)}%`, margin + 55 + maxBarWidth, yPos + index * 10 + 5);
     }
-    
-    // Percentage label
-    doc.text(`${Math.round(percentage)}%`, margin + 55 + maxBarWidth, yPos + index * 10 + 5);
   });
   
   yPos += skills.length * 10 + 10;

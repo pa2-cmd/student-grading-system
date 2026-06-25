@@ -33,6 +33,8 @@ export function SkillSelect({ value, onChange, disabled }: SkillSelectProps) {
         return 'text-skill-average bg-skill-average-bg';
       case 'Needs Improvement':
         return 'text-skill-needs bg-skill-needs-bg';
+      case 'NA':
+        return 'text-muted-foreground bg-muted/50 border-dashed';
     }
   };
 
@@ -57,7 +59,7 @@ export function SkillSelect({ value, onChange, disabled }: SkillSelectProps) {
             value={option}
             className={`text-xs font-medium cursor-pointer ${getSkillClass(option)} my-1 rounded-md`}
           >
-            {option} ({SKILL_VALUES[option]})
+            {option} {option !== 'NA' ? `(${SKILL_VALUES[option]})` : ''}
           </SelectItem>
         ))}
       </SelectContent>

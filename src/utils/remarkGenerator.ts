@@ -147,14 +147,14 @@ function generateTeacherLikeRemark(student: Student, language: 'english' | 'hind
       skill,
       label: getSkillDisplayName(skill),
       rating,
-      value: rating === undefined ? undefined : SKILL_VALUES[rating],
+      value: (rating === undefined || rating === 'NA') ? undefined : SKILL_VALUES[rating],
     };
   });
 
   const strengths = rated.filter((s) => s.value === 2).map((s) => s.label);
   const developing = rated.filter((s) => s.value === 1).map((s) => s.label);
   const focus = rated.filter((s) => s.value === 0).map((s) => s.label);
-  const unrated = rated.filter((s) => s.value === undefined).map((s) => s.label);
+  const unrated = rated.filter((s) => s.rating === undefined).map((s) => s.label);
 
   const maxScore = getMaxPossibleScore(student.subjectRatings);
   const percentage = maxScore > 0 ? (student.total / maxScore) * 100 : 0;

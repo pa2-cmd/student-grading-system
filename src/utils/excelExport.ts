@@ -44,6 +44,7 @@ export function exportToExcel(data: AssessmentData) {
     'Student Name', 
     ...skills, 
     'Total', 
+    'Percentage',
     'Remarks'
   ];
 
@@ -51,6 +52,7 @@ export function exportToExcel(data: AssessmentData) {
     .filter(s => s.name.trim())
     .map((student) => {
       const maxScore = getMaxPossibleScore(student.subjectRatings);
+      const percentage = maxScore > 0 ? (student.total / maxScore) * 100 : 0;
       
       return [
         student.serialNo,
@@ -60,10 +62,13 @@ export function exportToExcel(data: AssessmentData) {
           const rating = student.subjectRatings[skill];
           // If rating is undefined (unselected), export as empty cell
           if (rating === undefined) return '';
+          if (rating === 'NA') return 'NA'; // Export as NA directly without value suffix
           return `${rating} (${SKILL_VALUES[rating]})`;
         }),
         // Total shows actual/max format
         `${student.total}/${maxScore}`,
+        // Percentage column
+        maxScore > 0 ? `${Math.round(percentage)}%` : '-',
         student.remark,
       ];
     });
@@ -77,6 +82,7 @@ export function exportToExcel(data: AssessmentData) {
     { wch: 25 },  // Student Name
     ...skills.map(() => ({ wch: 18 })),  // Skill columns
     { wch: 10 },  // Total
+    { wch: 12 },  // Percentage
     { wch: 80 },  // Remarks
   ];
   ws['!cols'] = colWidths;

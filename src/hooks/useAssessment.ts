@@ -22,7 +22,7 @@ const STORAGE_KEY = 'assessment-data-v2';
 // Prevents malformed/malicious JSON from corrupting state
 // ============================================================
 
-const SkillRatingSchema = z.enum(['Good', 'Average', 'Needs Improvement']).optional();
+const SkillRatingSchema = z.enum(['Good', 'Average', 'Needs Improvement', 'NA']).optional();
 
 const StudentSchema = z.object({
   id: z.string().min(1).max(100),

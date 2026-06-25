@@ -43,6 +43,7 @@ export function AssessmentTable({
                 </TableHead>
               ))}
               <TableHead className="w-20 text-center font-semibold">Total</TableHead>
+              <TableHead className="w-20 text-center font-semibold">Percentage</TableHead>
               <TableHead className="min-w-[420px] font-semibold">AI Remarks</TableHead>
               <TableHead className="w-24 text-center font-semibold">Actions</TableHead>
             </TableRow>
