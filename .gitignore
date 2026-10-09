@@ -24,3 +24,10 @@ dist-ssr
 *.sw?
 
 gh_cli/
+
+# Environment
+.env
+
+# Supabase CLI
+supabase/.temp/
+supabase/.branches/
